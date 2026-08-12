@@ -37,7 +37,7 @@ public sealed class MainController
     }
 
     /// <summary>
-    /// 选择 PAK，优先使用 FilePassword.txt，再允许用户确认或修改密码。
+    /// 选择 PAK 后始终显示密码输入框，FilePassword.txt 中的记录仅用于预填。
     /// </summary>
     private void OpenArchive()
     {
@@ -53,10 +53,9 @@ public sealed class MainController
         }
 
         var configuredPassword = _passwordService.ResolvePassword(filePath);
-        var input = configuredPassword is not null
-            ? (Password: configuredPassword, Remember: false)
-            : _view.PromptPassword(filePath, null);
-        if (input is null || string.IsNullOrEmpty(input.Value.Password))
+        // 保留 TXT 自动识别能力，但始终让用户确认或修改本次用于打开的密码。
+        var password = _view.PromptPassword(filePath, configuredPassword);
+        if (string.IsNullOrEmpty(password))
         {
             return;
         }
@@ -65,13 +64,11 @@ public sealed class MainController
         _view.SetBusy(true, "正在读取并验证 PAK...");
         try
         {
-            var opened = _archiveService.Open(filePath, input.Value.Password);
+            var opened = _archiveService.Open(filePath, password);
             _archive = opened;
             _isDirty = false;
-            if (input.Value.Remember)
-            {
-                _passwordService.SavePassword(filePath, input.Value.Password);
-            }
+            // 只有归档验证成功后才更新 TXT，避免将错误密码写入 FilePassword.txt。
+            _passwordService.SavePassword(filePath, password);
 
             _view.BindArchive(opened);
             _view.UpdateCommandState(true, false);

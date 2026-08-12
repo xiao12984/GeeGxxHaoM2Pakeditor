@@ -56,8 +56,8 @@ public interface IMainView
     /// <summary>选择当前图片的 PNG 导出路径。</summary>
     string? SelectImageExportPath(int index);
 
-    /// <summary>输入密码与记忆选项。</summary>
-    (string Password, bool Remember)? PromptPassword(string pakPath, string? initialPassword);
+    /// <summary>显示密码输入框，并返回用户确认后的密码。</summary>
+    string? PromptPassword(string pakPath, string? initialPassword);
 
     /// <summary>确认删除当前逻辑槽位。</summary>
     bool ConfirmDelete(int index);

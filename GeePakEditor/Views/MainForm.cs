@@ -219,11 +219,11 @@ public sealed class MainForm : XtraForm, IMainView
     }
 
     /// <inheritdoc />
-    public (string Password, bool Remember)? PromptPassword(string pakPath, string? initialPassword)
+    public string? PromptPassword(string pakPath, string? initialPassword)
     {
-        using var dialog = new PasswordDialog(Path.GetFileName(pakPath), initialPassword);
+        using var dialog = new PasswordDialog(initialPassword);
         return dialog.ShowDialog(this) == DialogResult.OK
-            ? (dialog.Password, dialog.RememberPassword)
+            ? dialog.Password
             : null;
     }
 
