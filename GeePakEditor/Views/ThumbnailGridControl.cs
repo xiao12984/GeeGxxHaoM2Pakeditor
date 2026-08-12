@@ -391,7 +391,9 @@ internal sealed class ThumbnailGridControl : ScrollableControl
             cellBounds.Top + ThumbnailPadding,
             cellBounds.Width - (ThumbnailPadding * 2),
             cellBounds.Height - 30);
-        CheckerboardPreviewControl.DrawCheckerboard(graphics, thumbnailBounds);
+        // 缩略图网格使用纯白底，与大预览区的透明棋盘格视觉区分。
+        using var thumbnailBackgroundBrush = new SolidBrush(Color.White);
+        graphics.FillRectangle(thumbnailBackgroundBrush, thumbnailBounds);
         if (_thumbnailCache.TryGetValue(entry.Index, out var thumbnail))
         {
             graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
