@@ -8,6 +8,9 @@ namespace GeePakEditor.Services;
 /// </summary>
 public interface IPakArchiveService
 {
+    /// <summary>验证文件扩展名已筛选后的归档签名和固定头长度。</summary>
+    void ValidateArchiveFile(string filePath);
+
     /// <summary>打开并验证一个 GEEPAK3 文件。</summary>
     PakArchive Open(string filePath, string password);
 

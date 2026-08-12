@@ -60,6 +60,9 @@ public sealed class MainController
             return;
         }
 
+        ValidateArchivePath(filePath);
+        _archiveService.ValidateArchiveFile(filePath);
+
         var finalStatus = "未打开归档";
         _view.SetBusy(true, "正在读取并验证 PAK...");
         try
@@ -122,6 +125,22 @@ public sealed class MainController
             // 已知密码无法通过归档校验时，再进入用户手动输入流程。
             return null;
         }
+    }
+
+    /// <summary>
+    /// 验证用户选择的文件扩展名，避免普通文件进入密码确认流程。
+    /// </summary>
+    /// <param name="filePath">用户选择的本地文件路径。</param>
+    private static void ValidateArchivePath(string filePath)
+    {
+        var extension = Path.GetExtension(filePath);
+        if (string.Equals(extension, ".pak", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(extension, ".wzl", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException("仅支持打开 .pak 或 .wzl 格式的 GEEPAK3 归档文件。");
     }
 
     /// <summary>

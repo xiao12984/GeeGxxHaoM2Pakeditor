@@ -26,6 +26,31 @@ public sealed class GeePakArchiveService : IPakArchiveService
     }
 
     /// <inheritdoc />
+    public void ValidateArchiveFile(string filePath)
+    {
+        using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var header = new byte[GeePakConstants.HeaderSize];
+        var readLength = 0;
+        while (readLength < header.Length)
+        {
+            var count = stream.Read(header, readLength, header.Length - readLength);
+            if (count == 0)
+            {
+                break;
+            }
+
+            readLength += count;
+        }
+
+        if (readLength != header.Length)
+        {
+            throw new PakFormatException("文件长度小于 GEEPAK3 固定头长度。");
+        }
+
+        ValidateSignature(header);
+    }
+
+    /// <inheritdoc />
     public PakArchive Open(string filePath, string password)
     {
         if (!_keyProvider.TryGetProfile(password, out var keyProfile) || keyProfile is null)
