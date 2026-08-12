@@ -15,7 +15,7 @@
 
   <ItemGroup>
     <!-- DevExpress 23.2 需要已配置的 DevExpress NuGet 程序包源。 -->
-    <PackageReference Include="DevExpress.Win.Design" Version="23.2.3" />
+    <PackageReference Include="DevExpress.Win.Design" Version="23.2.6" />
     <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" />
   </ItemGroup>
 

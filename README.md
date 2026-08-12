@@ -76,7 +76,7 @@ analysis/       格式恢复记录与当前边界
 
 1. 安装 .NET 8 SDK。
 2. 配置具有授权的 DevExpress NuGet 程序包源。
-3. 安装或还原 `DevExpress.Win.Design 23.2.3`。
+3. 安装或还原 `DevExpress.Win.Design 23.2.6`。
 4. 使用 Visual Studio 2022 打开 `GeePakEditor.sln`。
 
 项目文件已内置 `win-x64`、自包含、单文件发布配置，并关闭裁剪以保证 WinForms 和 DevExpress 兼容性。

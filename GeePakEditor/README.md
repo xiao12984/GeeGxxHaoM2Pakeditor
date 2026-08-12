@@ -39,7 +39,7 @@ D:\你的资源目录\示例.Pak|你的密码
 
 - .NET 8 Windows / C# 12
 - WinForms
-- DevExpress WinForms 23.2
+- DevExpress WinForms 23.2.6
 - `System.Text.Encoding.CodePages` 用于兼容 GBK 密码文件
 
 DevExpress 包需要已配置并具有授权的 DevExpress NuGet 程序包源。
