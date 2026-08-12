@@ -10,6 +10,11 @@ GeePakEditor/PakKeyProfiles.json
 # 本机离线密码派生引擎仅作运行时输入，不进入源码仓库。
 PakBridgeSource/
 
+# 本机日志和发布用户配置不进入源码仓库。
+History.txt
+ImageViewerLog.txt
+GeePakEditor/Properties/PublishProfiles/*.pubxml.user
+
 # .NET 与 Visual Studio 生成目录。
 bin/
 obj/
