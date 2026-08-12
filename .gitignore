@@ -1,0 +1,15 @@
+# 参考二进制与用户资源包不进入源码仓库。
+*.exe
+*.pak
+*.wzl
+
+# 用户密码和派生密钥属于本机私密配置。
+FilePassword.txt
+GeePakEditor/PakKeyProfiles.json
+
+# .NET 与 Visual Studio 生成目录。
+bin/
+obj/
+.vs/
+*.user
+*.suo

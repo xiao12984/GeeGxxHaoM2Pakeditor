@@ -1,0 +1,10 @@
+{
+  "profiles": [
+    {
+      "password": "你的密码",
+      "indexKey": "256 字节密钥的 Base64",
+      "globalHeaderKey": "256 字节密钥的 Base64",
+      "imageHeaderKey": "1024 字节密钥的 Base64"
+    }
+  ]
+}

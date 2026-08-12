@@ -1,0 +1,458 @@
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.Text;
+using GeePakEditor.Config;
+using GeePakEditor.Models;
+using GeePakEditor.Utils;
+
+namespace GeePakEditor.Services;
+
+/// <summary>
+/// GEEPAK3 归档的精确读取、编辑与重新写入实现。
+/// </summary>
+public sealed class GeePakArchiveService : IPakArchiveService
+{
+    private readonly IPakKeyProvider _keyProvider;
+    private readonly PakImageCodec _imageCodec;
+
+    /// <summary>
+    /// 注入密钥来源与图片编解码主链路。
+    /// </summary>
+    public GeePakArchiveService(IPakKeyProvider keyProvider, PakImageCodec imageCodec)
+    {
+        _keyProvider = keyProvider;
+        _imageCodec = imageCodec;
+    }
+
+    /// <inheritdoc />
+    public PakArchive Open(string filePath, string password)
+    {
+        if (!_keyProvider.TryGetProfile(password, out var keyProfile) || keyProfile is null)
+        {
+            throw new PakFormatException(
+                $"密码“{password}”没有可用的 GEEPAK3 派生密钥。请把该密码对应的三组 Base64 密钥写入：{_keyProvider.ProfileFilePath}");
+        }
+
+        var data = File.ReadAllBytes(filePath);
+        ValidateSignature(data);
+        var plainGlobalHeader = DecryptGlobalHeader(data, keyProfile);
+        var fields = ReadGlobalFields(plainGlobalHeader, data.Length);
+        var slots = ReadSlots(data, fields.SlotCount, fields.IndexOffset, keyProfile);
+
+        return new PakArchive
+        {
+            FilePath = Path.GetFullPath(filePath),
+            Title = fields.Title,
+            Password = password,
+            KeyProfile = keyProfile,
+            ReservedBytes = data.AsSpan(8, 2).ToArray(),
+            PlainGlobalHeader = plainGlobalHeader,
+            Slots = slots
+        };
+    }
+
+    /// <inheritdoc />
+    public Bitmap DecodeImage(PakEntry entry) => _imageCodec.Decode(entry);
+
+    /// <inheritdoc />
+    public PakEntry AddImage(PakArchive archive, string imagePath)
+    {
+        var targetIndex = archive.Slots.FindIndex(entry => entry.IsEmpty);
+        if (targetIndex < 0)
+        {
+            targetIndex = archive.Slots.Count;
+            archive.Slots.Add(CreateEmptyEntry(targetIndex));
+        }
+
+        var encoded = _imageCodec.EncodeFile(imagePath, targetIndex);
+        archive.Slots[targetIndex] = encoded;
+        return encoded;
+    }
+
+    /// <inheritdoc />
+    public void ReplaceImage(PakArchive archive, int index, string imagePath)
+    {
+        var current = GetSlot(archive, index);
+        archive.Slots[index] = _imageCodec.EncodeFile(imagePath, index, current.X, current.Y);
+    }
+
+    /// <inheritdoc />
+    public void DeleteImage(PakArchive archive, int index)
+    {
+        _ = GetSlot(archive, index);
+        archive.Slots[index] = CreateEmptyEntry(index, true);
+    }
+
+    /// <inheritdoc />
+    public void ExportImage(PakEntry entry, string outputPath)
+    {
+        using var image = DecodeImage(entry);
+        image.Save(outputPath, ImageFormat.Png);
+    }
+
+    /// <inheritdoc />
+    public void Save(PakArchive archive, string outputPath)
+    {
+        if (archive.Slots.Count > GeePakConstants.MaximumSlotCount)
+        {
+            throw new InvalidOperationException($"槽位数量超过上限 {GeePakConstants.MaximumSlotCount:N0}。");
+        }
+
+        var resolvedOutputPath = Path.GetFullPath(outputPath);
+        var outputDirectory = Path.GetDirectoryName(resolvedOutputPath)
+            ?? throw new InvalidOperationException("保存路径没有有效目录。");
+        Directory.CreateDirectory(outputDirectory);
+        var temporaryPath = Path.Combine(outputDirectory, $".{Path.GetFileName(resolvedOutputPath)}.{Guid.NewGuid():N}.tmp");
+        var newOffsets = new uint[archive.Slots.Count];
+
+        try
+        {
+            using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            using (var writer = new BinaryWriter(stream, Encoding.ASCII, true))
+            {
+                WriteFileHeader(writer, archive);
+                var indexStart = stream.Position;
+                writer.Write(new byte[checked(archive.Slots.Count * sizeof(uint))]);
+
+                foreach (var entry in archive.Slots)
+                {
+                    if (entry.IsEmpty)
+                    {
+                        continue;
+                    }
+
+                    ValidateEntryForSave(entry);
+                    if (stream.Position > uint.MaxValue)
+                    {
+                        throw new InvalidOperationException("PAK 文件超过 GEEPAK3 的 4 GiB 偏移上限。");
+                    }
+
+                    newOffsets[entry.Index] = (uint)stream.Position;
+                    writer.Write(EncryptImageHeader(entry, archive.KeyProfile));
+                    writer.Write(entry.Payload);
+                }
+
+                stream.Position = indexStart;
+                for (var index = 0; index < newOffsets.Length; index++)
+                {
+                    var key = PakBinary.ReadUInt32(archive.KeyProfile.IndexKey, index % 64 * sizeof(uint));
+                    var encrypted = newOffsets[index] ^ ~key ^ (uint)index;
+                    writer.Write(encrypted);
+                }
+
+                writer.Flush();
+                stream.Flush(true);
+            }
+
+            File.Move(temporaryPath, resolvedOutputPath, true);
+            archive.FilePath = resolvedOutputPath;
+            for (var index = 0; index < archive.Slots.Count; index++)
+            {
+                archive.Slots[index].Index = index;
+                archive.Slots[index].SourceOffset = newOffsets[index];
+                archive.Slots[index].IsModified = false;
+            }
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath))
+            {
+                File.Delete(temporaryPath);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 验证文件签名并排除目前没有写回规则的 GEEPAK2。
+    /// </summary>
+    private static void ValidateSignature(byte[] data)
+    {
+        if (data.Length < GeePakConstants.HeaderSize)
+        {
+            throw new PakFormatException("文件长度小于 GEEPAK3 固定头长度。");
+        }
+
+        if (!data.AsSpan(0, GeePakConstants.Signature.Length).SequenceEqual(GeePakConstants.Signature))
+        {
+            throw new PakFormatException("文件签名不是 GEEPAK3；当前 C# 版本仅支持可精确写回的 GEEPAK3。");
+        }
+    }
+
+    /// <summary>
+    /// 使用密码对应密钥还原 256 字节全局头。
+    /// </summary>
+    private static byte[] DecryptGlobalHeader(byte[] data, PakKeyProfile profile)
+    {
+        var plain = new byte[GeePakConstants.GlobalHeaderSize];
+        for (var index = 0; index < plain.Length; index++)
+        {
+            plain[index] = (byte)(data[10 + index] ^ profile.GlobalHeaderKey[index]);
+        }
+
+        return plain;
+    }
+
+    /// <summary>
+    /// 读取并验证全局头中已确认的标题、版本与索引范围。
+    /// </summary>
+    private static GlobalFields ReadGlobalFields(byte[] plainHeader, int fileLength)
+    {
+        var titleLength = plainHeader[1];
+        if (titleLength == 0 || titleLength > 40 || 2 + titleLength > plainHeader.Length)
+        {
+            throw new PakFormatException("全局头标题长度无效，密码或密钥可能不正确。");
+        }
+
+        var title = Encoding.ASCII.GetString(plainHeader, 2, titleLength);
+        var headerSize = PakBinary.ReadUInt32(plainHeader, 0x2A);
+        var slotCountValue = PakBinary.ReadUInt32(plainHeader, 0x2E);
+        var version = PakBinary.ReadUInt32(plainHeader, 0x32);
+        var indexOffsetValue = PakBinary.ReadUInt32(plainHeader, 0x36);
+        if (title is not ("www.gameofmir.com" or "www.gameofmir2.com") ||
+            headerSize != GeePakConstants.HeaderSize ||
+            version != 2 ||
+            indexOffsetValue != GeePakConstants.HeaderSize ||
+            slotCountValue > GeePakConstants.MaximumSlotCount)
+        {
+            throw new PakFormatException("GEEPAK3 全局头校验失败，密码或派生密钥不正确。");
+        }
+
+        var slotCount = checked((int)slotCountValue);
+        var indexOffset = checked((int)indexOffsetValue);
+        PakBinary.EnsureRange(fileLength, indexOffset, checked(slotCount * sizeof(uint)));
+        return new GlobalFields(title, slotCount, indexOffset);
+    }
+
+    /// <summary>
+    /// 解密索引、块头和载荷，并验证块之间没有重叠。
+    /// </summary>
+    private List<PakEntry> ReadSlots(byte[] data, int slotCount, int indexOffset, PakKeyProfile profile)
+    {
+        var offsets = new uint[slotCount];
+        var occupied = new List<(int Index, uint Offset)>();
+        var seenOffsets = new HashSet<uint>();
+        var indexEnd = checked(indexOffset + slotCount * sizeof(uint));
+        for (var index = 0; index < slotCount; index++)
+        {
+            var encrypted = PakBinary.ReadUInt32(data, indexOffset + index * sizeof(uint));
+            var key = PakBinary.ReadUInt32(profile.IndexKey, index % 64 * sizeof(uint));
+            var offset = encrypted ^ ~key ^ (uint)index;
+            offsets[index] = offset;
+            if (offset == 0)
+            {
+                continue;
+            }
+
+            if (offset < indexEnd || offset > data.Length - GeePakConstants.ImageHeaderSize)
+            {
+                throw new PakFormatException($"图片 {index} 的块头偏移 {offset} 越界。");
+            }
+
+            if (!seenOffsets.Add(offset))
+            {
+                throw new PakFormatException($"图片 {index} 与其他槽位使用了重复块偏移 {offset}。");
+            }
+
+            occupied.Add((index, offset));
+        }
+
+        occupied.Sort((left, right) => left.Offset.CompareTo(right.Offset));
+        var slots = Enumerable.Range(0, slotCount).Select(index => CreateEmptyEntry(index)).ToList();
+        for (var order = 0; order < occupied.Count; order++)
+        {
+            var item = occupied[order];
+            var nextOffset = order + 1 < occupied.Count ? occupied[order + 1].Offset : (uint)data.Length;
+            slots[item.Index] = ReadEntry(data, item.Index, item.Offset, nextOffset, profile);
+        }
+
+        return slots;
+    }
+
+    /// <summary>
+    /// 解密单个 16 字节块头并复制其载荷。
+    /// </summary>
+    private PakEntry ReadEntry(byte[] data, int index, uint offset, uint nextOffset, PakKeyProfile profile)
+    {
+        var header = new byte[GeePakConstants.ImageHeaderSize];
+        var keyOffset = index % 64 * GeePakConstants.ImageHeaderSize;
+        for (var byteIndex = 0; byteIndex < header.Length; byteIndex++)
+        {
+            header[byteIndex] = (byte)(data[(int)offset + byteIndex] ^ profile.ImageHeaderKey[keyOffset + byteIndex]);
+        }
+
+        var imageType = header[0];
+        var flags = header[3];
+        var width = PakBinary.ReadUInt16(header, 4);
+        var height = PakBinary.ReadUInt16(header, 6);
+        var x = PakBinary.ReadInt16(header, 8);
+        var y = PakBinary.ReadInt16(header, 10);
+        var compressedSizeValue = PakBinary.ReadUInt32(header, 12);
+        if (width is < 1 or > 4096 || height is < 1 or > 4096)
+        {
+            throw new PakFormatException($"图片 {index} 尺寸 {width}x{height} 无效，密码或块头密钥可能不正确。");
+        }
+
+        int rawSize;
+        try
+        {
+            rawSize = PakImageCodec.CalculateRawSize(imageType, flags, width, height);
+        }
+        catch (Exception exception) when (exception is InvalidDataException or OverflowException)
+        {
+            throw new PakFormatException($"图片 {index} 的像素格式或尺寸无效。", exception);
+        }
+
+        var compressedSize = checked((int)compressedSizeValue);
+        var payloadSize = compressedSize == 0 ? rawSize : compressedSize;
+        var payloadOffset = checked((long)offset + GeePakConstants.ImageHeaderSize);
+        PakBinary.EnsureRange(data.Length, payloadOffset, payloadSize);
+        if (payloadOffset + payloadSize > nextOffset)
+        {
+            throw new PakFormatException($"图片 {index} 的载荷与下一个块重叠。");
+        }
+
+        if (compressedSize > 0)
+        {
+            ValidateZlibHeader(data, checked((int)payloadOffset), index);
+        }
+
+        return new PakEntry
+        {
+            Index = index,
+            IsEmpty = false,
+            ImageType = imageType,
+            Flags = flags,
+            Width = width,
+            Height = height,
+            X = x,
+            Y = y,
+            RawSize = rawSize,
+            CompressedSize = compressedSize,
+            Payload = data.AsSpan(checked((int)payloadOffset), payloadSize).ToArray(),
+            PlainHeader = header,
+            SourceOffset = offset,
+            IsModified = false
+        };
+    }
+
+    /// <summary>
+    /// 校验 zlib 头的压缩方法和 FCHECK。
+    /// </summary>
+    private static void ValidateZlibHeader(byte[] data, int payloadOffset, int index)
+    {
+        PakBinary.EnsureRange(data.Length, payloadOffset, 2);
+        var cmf = data[payloadOffset];
+        var flg = data[payloadOffset + 1];
+        if ((cmf & 0x0F) != 8 || ((cmf << 8) + flg) % 31 != 0)
+        {
+            throw new PakFormatException($"图片 {index} 的 zlib 头无效。");
+        }
+    }
+
+    /// <summary>
+    /// 写入签名、保留字段和重新加密后的全局头。
+    /// </summary>
+    private static void WriteFileHeader(BinaryWriter writer, PakArchive archive)
+    {
+        writer.Write(GeePakConstants.Signature);
+        writer.Write(archive.ReservedBytes.Length == 2 ? archive.ReservedBytes : new byte[] { 0, 0 });
+
+        var plain = archive.PlainGlobalHeader.ToArray();
+        if (plain.Length != GeePakConstants.GlobalHeaderSize)
+        {
+            throw new InvalidOperationException("归档中的全局头长度无效。");
+        }
+
+        PakBinary.WriteUInt32(plain, 0x2A, GeePakConstants.HeaderSize);
+        PakBinary.WriteUInt32(plain, 0x2E, checked((uint)archive.Slots.Count));
+        PakBinary.WriteUInt32(plain, 0x32, 2);
+        PakBinary.WriteUInt32(plain, 0x36, GeePakConstants.HeaderSize);
+        var encrypted = new byte[plain.Length];
+        for (var index = 0; index < encrypted.Length; index++)
+        {
+            encrypted[index] = (byte)(plain[index] ^ archive.KeyProfile.GlobalHeaderKey[index]);
+        }
+
+        writer.Write(encrypted);
+    }
+
+    /// <summary>
+    /// 生成并加密一个完整的 16 字节图片块头。
+    /// </summary>
+    private static byte[] EncryptImageHeader(PakEntry entry, PakKeyProfile profile)
+    {
+        var plain = entry.PlainHeader.Length == GeePakConstants.ImageHeaderSize
+            ? entry.PlainHeader.ToArray()
+            : new byte[GeePakConstants.ImageHeaderSize];
+        plain[0] = entry.ImageType;
+        plain[3] = entry.Flags;
+        PakBinary.WriteUInt16(plain, 4, checked((ushort)entry.Width));
+        PakBinary.WriteUInt16(plain, 6, checked((ushort)entry.Height));
+        PakBinary.WriteInt16(plain, 8, entry.X);
+        PakBinary.WriteInt16(plain, 10, entry.Y);
+        PakBinary.WriteUInt32(plain, 12, checked((uint)entry.CompressedSize));
+
+        var encrypted = new byte[plain.Length];
+        var keyOffset = entry.Index % 64 * GeePakConstants.ImageHeaderSize;
+        for (var byteIndex = 0; byteIndex < encrypted.Length; byteIndex++)
+        {
+            encrypted[byteIndex] = (byte)(plain[byteIndex] ^ profile.ImageHeaderKey[keyOffset + byteIndex]);
+        }
+
+        return encrypted;
+    }
+
+    /// <summary>
+    /// 保存前确认索引、尺寸、载荷与压缩标记一致。
+    /// </summary>
+    private static void ValidateEntryForSave(PakEntry entry)
+    {
+        if (entry.Index < 0 || entry.Width is < 1 or > 4096 || entry.Height is < 1 or > 4096)
+        {
+            throw new InvalidOperationException($"图片 {entry.Index} 的元数据无效。");
+        }
+
+        var expectedRawSize = PakImageCodec.CalculateRawSize(entry.ImageType, entry.Flags, entry.Width, entry.Height);
+        if (expectedRawSize != entry.RawSize)
+        {
+            throw new InvalidOperationException($"图片 {entry.Index} 的原始长度与像素格式不一致。");
+        }
+
+        var expectedPayloadSize = entry.CompressedSize == 0 ? entry.RawSize : entry.CompressedSize;
+        if (entry.Payload.Length != expectedPayloadSize)
+        {
+            throw new InvalidOperationException($"图片 {entry.Index} 的载荷长度无效。");
+        }
+    }
+
+    /// <summary>
+    /// 返回索引存在的槽位，否则报告调用错误。
+    /// </summary>
+    private static PakEntry GetSlot(PakArchive archive, int index)
+    {
+        if (index < 0 || index >= archive.Slots.Count)
+        {
+            throw new ArgumentOutOfRangeException(nameof(index), "图片索引超出当前归档范围。");
+        }
+
+        return archive.Slots[index];
+    }
+
+    /// <summary>
+    /// 创建一个不占用物理块的空逻辑槽位。
+    /// </summary>
+    private static PakEntry CreateEmptyEntry(int index, bool modified = false)
+    {
+        return new PakEntry
+        {
+            Index = index,
+            IsEmpty = true,
+            IsModified = modified
+        };
+    }
+
+    /// <summary>
+    /// 全局头中已确认且会参与验证的字段。
+    /// </summary>
+    private sealed record GlobalFields(string Title, int SlotCount, int IndexOffset);
+}
