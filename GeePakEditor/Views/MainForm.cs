@@ -69,9 +69,8 @@ public sealed class MainForm : XtraForm, IMainView
     private readonly SimpleButton _deleteButton;
 
     /// <summary>
-    /// 资源筛选框、目录树、预览区和缩略图网格。
+    /// 目录树、预览区和缩略图网格。
     /// </summary>
-    private readonly TextEdit _filterEdit;
     private readonly ImageList _directoryTreeImages;
     private readonly TreeView _directoryTree;
     private readonly CheckerboardPreviewControl _previewControl;
@@ -133,11 +132,6 @@ public sealed class MainForm : XtraForm, IMainView
         _replaceButton = CreateCommandButton("替换", "Replace;Size32x32");
         _exportButton = CreateCommandButton("导出", "ExportFile;Size32x32");
         _deleteButton = CreateCommandButton("删除", "Delete;Size32x32");
-
-        _filterEdit = new TextEdit { Width = 220 };
-        _filterEdit.Properties.NullValuePrompt = "筛选索引、格式或状态";
-        _filterEdit.Properties.ShowNullValuePromptWhenFocused = true;
-        _filterEdit.Properties.Appearance.Font = new Font("Microsoft YaHei UI", 9F);
 
         _directoryTreeImages = CreateDirectoryTreeImages();
         _directoryTree = CreateDirectoryTree(_directoryTreeImages);
@@ -704,7 +698,7 @@ public sealed class MainForm : XtraForm, IMainView
     }
 
     /// <summary>
-    /// 创建顶部大图标命令栏，含分组分隔线和资源筛选框。
+    /// 创建顶部大图标命令栏，含分组分隔线。
     /// </summary>
     /// <returns>主窗口顶部工具栏。</returns>
     private Control CreateToolbar()
@@ -735,19 +729,6 @@ public sealed class MainForm : XtraForm, IMainView
         buttonFlow.Controls.Add(_replaceButton);
         buttonFlow.Controls.Add(_exportButton);
         buttonFlow.Controls.Add(_deleteButton);
-
-        // 添加分隔线和筛选框
-        buttonFlow.Controls.Add(CreateToolbarSeparator());
-        var filterWrapper = new PanelControl
-        {
-            Size = new Size(200, 72),
-            BorderStyle = BorderStyles.NoBorder,
-            Appearance = { BackColor = Color.Transparent },
-            Padding = new Padding(0, 20, 0, 20)
-        };
-        _filterEdit.Dock = DockStyle.Fill;
-        filterWrapper.Controls.Add(_filterEdit);
-        buttonFlow.Controls.Add(filterWrapper);
 
         toolbar.Controls.Add(buttonFlow);
         return toolbar;
@@ -832,7 +813,7 @@ public sealed class MainForm : XtraForm, IMainView
     }
 
     /// <summary>
-    /// 绑定工具栏、目录树、缩略图网格、筛选和坐标编辑事件。
+    /// 绑定工具栏、目录树、缩略图网格和坐标编辑事件。
     /// </summary>
     private void BindEvents()
     {
@@ -843,7 +824,6 @@ public sealed class MainForm : XtraForm, IMainView
         _replaceButton.Click += (_, _) => ReplaceRequested?.Invoke(this, EventArgs.Empty);
         _exportButton.Click += (_, _) => ExportRequested?.Invoke(this, EventArgs.Empty);
         _deleteButton.Click += (_, _) => DeleteRequested?.Invoke(this, EventArgs.Empty);
-        _filterEdit.EditValueChanged += (_, _) => _thumbnailGrid.SetFilterText(_filterEdit.Text);
         _directoryTree.BeforeExpand += OnDirectoryTreeBeforeExpand;
         _directoryTree.NodeMouseDoubleClick += OnDirectoryTreeNodeMouseDoubleClick;
         _thumbnailGrid.SelectionChanged += (_, _) => SelectionChanged?.Invoke(this, EventArgs.Empty);
