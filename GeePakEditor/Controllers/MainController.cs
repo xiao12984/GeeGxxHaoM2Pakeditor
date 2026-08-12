@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using GeePakEditor.Config;
 using GeePakEditor.Models;
 using GeePakEditor.Services;
 using GeePakEditor.Views;
@@ -41,7 +42,7 @@ public sealed class MainController
     }
 
     /// <summary>
-    /// 从文件对话框或目录树指定的路径打开归档，并统一执行密码确认流程。
+    /// 从文件对话框或目录树指定的路径打开归档，优先自动尝试已知密码。
     /// </summary>
     /// <param name="requestedPath">目录树指定的归档路径；为空时显示打开文件对话框。</param>
     private void OpenArchive(string? requestedPath = null)
@@ -59,23 +60,34 @@ public sealed class MainController
             return;
         }
 
-        var configuredPassword = _passwordService.ResolvePassword(filePath);
-        // 保留 TXT 自动识别能力，但始终让用户确认或修改本次用于打开的密码。
-        var password = _view.PromptPassword(filePath, configuredPassword);
-        if (string.IsNullOrEmpty(password))
-        {
-            return;
-        }
-
         var finalStatus = "未打开归档";
         _view.SetBusy(true, "正在读取并验证 PAK...");
         try
         {
-            var opened = _archiveService.Open(filePath, password);
+            var configuredPassword = _passwordService.ResolvePassword(filePath);
+            var opened = TryOpenWithKnownPassword(filePath, configuredPassword)
+                ?? TryOpenWithKnownPassword(filePath, GeePakConstants.DefaultPassword);
+            var shouldSavePassword = false;
+            if (opened is null)
+            {
+                // 只有已保存密码和内置默认密码均无法打开时，才让用户输入自定义密码。
+                var password = _view.PromptPassword(filePath, configuredPassword);
+                if (string.IsNullOrEmpty(password))
+                {
+                    return;
+                }
+
+                opened = _archiveService.Open(filePath, password);
+                shouldSavePassword = true;
+            }
+
             _archive = opened;
             _isDirty = false;
-            // 只有归档验证成功后才更新 TXT，避免将错误密码写入 FilePassword.txt。
-            _passwordService.SavePassword(filePath, password);
+            if (shouldSavePassword)
+            {
+                // 仅在用户手动输入且归档验证成功后更新 TXT，避免记录默认密码。
+                _passwordService.SavePassword(filePath, opened.Password);
+            }
 
             _view.BindArchive(opened);
             _view.UpdateCommandState(true, false);
@@ -85,6 +97,30 @@ public sealed class MainController
         finally
         {
             _view.SetBusy(false, finalStatus);
+        }
+    }
+
+    /// <summary>
+    /// 使用已保存或内置密码尝试打开归档；密码不匹配时交由调用方决定是否提示用户输入。
+    /// </summary>
+    /// <param name="filePath">需要打开的归档完整路径。</param>
+    /// <param name="password">待验证的已知密码。</param>
+    /// <returns>验证成功的归档；密码不匹配时返回 null。</returns>
+    private PakArchive? TryOpenWithKnownPassword(string filePath, string? password)
+    {
+        if (string.IsNullOrEmpty(password))
+        {
+            return null;
+        }
+
+        try
+        {
+            return _archiveService.Open(filePath, password);
+        }
+        catch (PakFormatException)
+        {
+            // 已知密码无法通过归档校验时，再进入用户手动输入流程。
+            return null;
         }
     }
 
