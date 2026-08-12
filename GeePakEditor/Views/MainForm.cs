@@ -474,6 +474,8 @@ public sealed class MainForm : XtraForm, IMainView
         button.ImageOptions.ImageUri.Uri = imageUri;
         button.ImageOptions.Location = ImageLocation.TopCenter;
         button.ImageOptions.SvgImageSize = new Size(20, 20);
+        // 禁用时保留原始 SVG 颜色，避免灰置后图标与底色混在一起。
+        button.ImageOptions.SvgImageColorizationMode = SvgImageColorizationMode.None;
         return button;
     }
 
