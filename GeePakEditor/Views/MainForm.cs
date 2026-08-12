@@ -177,7 +177,7 @@ public sealed class MainForm : XtraForm, IMainView
 
         BuildWorkspace();
         var mainLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
-        mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 96F));
+        mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 72F));
         mainLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
         mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32F));
         mainLayout.Controls.Add(CreateHeaderPanel(), 0, 0);
@@ -460,10 +460,11 @@ public sealed class MainForm : XtraForm, IMainView
         var button = new SimpleButton
         {
             Text = text,
-            Size = new Size(68, 72),
-            MinimumSize = new Size(68, 72),
+            Size = new Size(60, 60),
+            MinimumSize = new Size(60, 60),
+            Margin = new Padding(2, 1, 2, 1),
             ToolTip = text,
-            Font = new Font("Microsoft YaHei UI", 8F),
+            Font = new Font("Microsoft YaHei UI", 7.5F),
             Appearance =
             {
                 BackColor = Color.Transparent,
@@ -472,7 +473,7 @@ public sealed class MainForm : XtraForm, IMainView
         };
         button.ImageOptions.ImageUri.Uri = imageUri;
         button.ImageOptions.Location = ImageLocation.TopCenter;
-        button.ImageOptions.SvgImageSize = new Size(24, 24);
+        button.ImageOptions.SvgImageSize = new Size(20, 20);
         return button;
     }
 
@@ -715,7 +716,7 @@ public sealed class MainForm : XtraForm, IMainView
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = false,
             AutoScroll = true,
-            Padding = new Padding(0, 8, 8, 8)
+            Padding = new Padding(0, 4, 4, 4)
         };
 
         // 第一个按钮组从左侧直接开始，移除品牌区后不再保留额外占位。
@@ -741,8 +742,8 @@ public sealed class MainForm : XtraForm, IMainView
     {
         return new PanelControl
         {
-            Size = new Size(2, 72),
-            Padding = new Padding(4, 0, 4, 0),
+            Size = new Size(2, 48),
+            Padding = new Padding(2, 0, 2, 0),
             BorderStyle = BorderStyles.NoBorder,
             Appearance = { BackColor = Color.Transparent }
         };
