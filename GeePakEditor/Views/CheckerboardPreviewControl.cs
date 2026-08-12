@@ -25,6 +25,14 @@ internal sealed class CheckerboardPreviewControl : Control
     /// </summary>
     public CheckerboardPreviewControl()
     {
+        // 将背景、棋盘格和图片合并到同一双缓冲绘制帧，避免缩放布局后残留旧图像。
+        SetStyle(
+            ControlStyles.UserPaint
+            | ControlStyles.AllPaintingInWmPaint
+            | ControlStyles.OptimizedDoubleBuffer
+            | ControlStyles.ResizeRedraw
+            | ControlStyles.Opaque,
+            true);
         DoubleBuffered = true;
         BackColor = Color.White;
         TabStop = false;
@@ -39,8 +47,29 @@ internal sealed class CheckerboardPreviewControl : Control
         set
         {
             _image = value;
-            Invalidate();
+            // 图片切换时请求整个预览区域重绘，确保旧图片占用的区域被棋盘格覆盖。
+            Invalidate(ClientRectangle);
         }
+    }
+
+    /// <summary>
+    /// 禁用默认背景分帧绘制，由 OnPaint 在同一缓冲帧中完整绘制棋盘格和图片。
+    /// </summary>
+    /// <param name="e">背景绘制上下文。</param>
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+        // 控件区域会由 OnPaint 的棋盘格完整覆盖，无需执行默认背景绘制。
+    }
+
+    /// <summary>
+    /// 预览区域尺寸变化后请求完整重绘，避免拆分条或 DPI 缩放留下旧图片像素。
+    /// </summary>
+    /// <param name="e">控件尺寸变化参数。</param>
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        // 尺寸变化会改变图片居中坐标，必须使整个区域失效而非只刷新局部。
+        Invalidate(ClientRectangle);
     }
 
     /// <summary>
