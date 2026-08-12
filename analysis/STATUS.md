@@ -5,6 +5,7 @@
 - 建立 .NET 8 Windows、C# 12、WinForms 与 DevExpress 23.2 工程结构。
 - 实现 GEEPAK3 签名、全局头、索引和图片块头解析。
 - 实现六种已确认像素布局和 zlib 载荷解码。
+- 实现传统 WZL/WZX 只读打开、预览和 PNG 导出。
 - 实现导入、替换、删除、PNG 导出、保存和另存为。
 - 实现 `完整路径|密码` 格式的 `FilePassword.txt` 读取与更新。
 - 实现默认密码内置密钥和外部 `PakKeyProfiles.json` 密钥提供器。
@@ -14,6 +15,7 @@
 - 样本自定义密码对应的 256、256、1024 字节派生密钥尚未获得。
 - 参考程序的任意密码派生入口受 VMProtect 保护；现有旁证工具使用 VM 页面快照执行该入口，而不是公开算法。
 - 当前版本不写回 GEEPAK2、GAMEOFMIR、GAMEOFMIR2 或 JPK。
+- 当前版本不写回传统 WZL/WZX，只允许浏览和导出。
 
 ## 安全边界
 

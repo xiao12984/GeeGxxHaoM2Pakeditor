@@ -15,6 +15,7 @@ public sealed class GeePakArchiveService : IPakArchiveService
 {
     private readonly IPakKeyProvider _keyProvider;
     private readonly PakImageCodec _imageCodec;
+    private readonly WzlArchiveReader _wzlArchiveReader = new();
 
     /// <summary>
     /// 注入密钥来源与图片编解码主链路。
@@ -23,6 +24,21 @@ public sealed class GeePakArchiveService : IPakArchiveService
     {
         _keyProvider = keyProvider;
         _imageCodec = imageCodec;
+    }
+
+    /// <inheritdoc />
+    public bool IsGeePak3Archive(string filePath)
+    {
+        using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        if (stream.Length < GeePakConstants.Signature.Length)
+        {
+            return false;
+        }
+
+        var signature = new byte[GeePakConstants.Signature.Length];
+        var readLength = stream.Read(signature, 0, signature.Length);
+        return readLength == signature.Length &&
+               signature.AsSpan().SequenceEqual(GeePakConstants.Signature);
     }
 
     /// <inheritdoc />
@@ -69,6 +85,8 @@ public sealed class GeePakArchiveService : IPakArchiveService
         {
             FilePath = Path.GetFullPath(filePath),
             Title = fields.Title,
+            Format = PakArchiveFormat.GeePak3,
+            CanWrite = true,
             Password = password,
             KeyProfile = keyProfile,
             ReservedBytes = data.AsSpan(8, 2).ToArray(),
@@ -78,11 +96,15 @@ public sealed class GeePakArchiveService : IPakArchiveService
     }
 
     /// <inheritdoc />
+    public PakArchive OpenWzl(string filePath) => _wzlArchiveReader.Open(filePath);
+
+    /// <inheritdoc />
     public Bitmap DecodeImage(PakEntry entry) => _imageCodec.Decode(entry);
 
     /// <inheritdoc />
     public PakEntry AddImage(PakArchive archive, string imagePath)
     {
+        EnsureWritableArchive(archive);
         var targetIndex = archive.Slots.FindIndex(entry => entry.IsEmpty);
         if (targetIndex < 0)
         {
@@ -98,6 +120,7 @@ public sealed class GeePakArchiveService : IPakArchiveService
     /// <inheritdoc />
     public void ReplaceImage(PakArchive archive, int index, string imagePath)
     {
+        EnsureWritableArchive(archive);
         var current = GetSlot(archive, index);
         archive.Slots[index] = _imageCodec.EncodeFile(imagePath, index, current.X, current.Y);
     }
@@ -105,6 +128,7 @@ public sealed class GeePakArchiveService : IPakArchiveService
     /// <inheritdoc />
     public void DeleteImage(PakArchive archive, int index)
     {
+        EnsureWritableArchive(archive);
         _ = GetSlot(archive, index);
         archive.Slots[index] = CreateEmptyEntry(index, true);
     }
@@ -119,6 +143,8 @@ public sealed class GeePakArchiveService : IPakArchiveService
     /// <inheritdoc />
     public void Save(PakArchive archive, string outputPath)
     {
+        EnsureWritableArchive(archive);
+        var keyProfile = RequireKeyProfile(archive);
         if (archive.Slots.Count > GeePakConstants.MaximumSlotCount)
         {
             throw new InvalidOperationException($"槽位数量超过上限 {GeePakConstants.MaximumSlotCount:N0}。");
@@ -136,7 +162,7 @@ public sealed class GeePakArchiveService : IPakArchiveService
             using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             using (var writer = new BinaryWriter(stream, Encoding.ASCII, true))
             {
-                WriteFileHeader(writer, archive);
+                WriteFileHeader(writer, archive, keyProfile);
                 var indexStart = stream.Position;
                 writer.Write(new byte[checked(archive.Slots.Count * sizeof(uint))]);
 
@@ -154,14 +180,14 @@ public sealed class GeePakArchiveService : IPakArchiveService
                     }
 
                     newOffsets[entry.Index] = (uint)stream.Position;
-                    writer.Write(EncryptImageHeader(entry, archive.KeyProfile));
+                    writer.Write(EncryptImageHeader(entry, keyProfile));
                     writer.Write(entry.Payload);
                 }
 
                 stream.Position = indexStart;
                 for (var index = 0; index < newOffsets.Length; index++)
                 {
-                    var key = PakBinary.ReadUInt32(archive.KeyProfile.IndexKey, index % 64 * sizeof(uint));
+                    var key = PakBinary.ReadUInt32(keyProfile.IndexKey, index % 64 * sizeof(uint));
                     var encrypted = newOffsets[index] ^ ~key ^ (uint)index;
                     writer.Write(encrypted);
                 }
@@ -378,7 +404,7 @@ public sealed class GeePakArchiveService : IPakArchiveService
     /// <summary>
     /// 写入签名、保留字段和重新加密后的全局头。
     /// </summary>
-    private static void WriteFileHeader(BinaryWriter writer, PakArchive archive)
+    private static void WriteFileHeader(BinaryWriter writer, PakArchive archive, PakKeyProfile keyProfile)
     {
         writer.Write(GeePakConstants.Signature);
         writer.Write(archive.ReservedBytes.Length == 2 ? archive.ReservedBytes : new byte[] { 0, 0 });
@@ -396,7 +422,7 @@ public sealed class GeePakArchiveService : IPakArchiveService
         var encrypted = new byte[plain.Length];
         for (var index = 0; index < encrypted.Length; index++)
         {
-            encrypted[index] = (byte)(plain[index] ^ archive.KeyProfile.GlobalHeaderKey[index]);
+            encrypted[index] = (byte)(plain[index] ^ keyProfile.GlobalHeaderKey[index]);
         }
 
         writer.Write(encrypted);
@@ -462,6 +488,28 @@ public sealed class GeePakArchiveService : IPakArchiveService
         }
 
         return archive.Slots[index];
+    }
+
+    /// <summary>
+    /// 确认当前归档允许通过 GEEPAK3 写回链路修改。
+    /// </summary>
+    /// <param name="archive">待修改或保存的归档。</param>
+    private static void EnsureWritableArchive(PakArchive archive)
+    {
+        if (!archive.CanWrite)
+        {
+            throw new InvalidOperationException("传统 WZL/WZX 当前仅支持浏览和导出，不能写回或修改。");
+        }
+    }
+
+    /// <summary>
+    /// 获取 GEEPAK3 写回必须使用的精确密钥。
+    /// </summary>
+    /// <param name="archive">需要保存的 GEEPAK3 归档。</param>
+    /// <returns>归档对应的密钥配置。</returns>
+    private static PakKeyProfile RequireKeyProfile(PakArchive archive)
+    {
+        return archive.KeyProfile ?? throw new InvalidOperationException("当前归档缺少 GEEPAK3 写回密钥。");
     }
 
     /// <summary>

@@ -5,6 +5,7 @@
 ## 功能
 
 - 打开并校验 GEEPAK3 归档。
+- 只读打开传统 `.wzl` + 同名 `.wzx` 资源，浏览、搜索、预览并导出 PNG。
 - 按逻辑索引浏览、搜索和预览图片。
 - 解码固定调色板、R5G6B5、RGB24、RGB24+A8、XRGB32 和 ARGB32。
 - 导入、替换、删除图片，导出为 PNG。
@@ -106,4 +107,5 @@ codegraph explore "GeePakArchiveService Open Save"
 
 - 保存时先写入同目录临时文件，完成后再替换目标文件。
 - `.gitignore` 排除参考 EXE、PAK/WZL 资源、真实密码和本机派生密钥。
+- 传统 WZL/WZX 当前只读，不走 GEEPAK3 写回链路。
 - 修改重要资源前仍建议保留原始 PAK 备份。

@@ -8,11 +8,17 @@ namespace GeePakEditor.Services;
 /// </summary>
 public interface IPakArchiveService
 {
+    /// <summary>快速判断文件是否带有 GEEPAK3 明文签名。</summary>
+    bool IsGeePak3Archive(string filePath);
+
     /// <summary>验证文件扩展名已筛选后的归档签名和固定头长度。</summary>
     void ValidateArchiveFile(string filePath);
 
     /// <summary>打开并验证一个 GEEPAK3 文件。</summary>
     PakArchive Open(string filePath, string password);
+
+    /// <summary>只读打开传统 WZL 数据文件及同名 WZX 索引文件。</summary>
+    PakArchive OpenWzl(string filePath);
 
     /// <summary>解码一个非空图片槽位。</summary>
     Bitmap DecodeImage(PakEntry entry);

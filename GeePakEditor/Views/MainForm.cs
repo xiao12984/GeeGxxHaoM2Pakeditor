@@ -24,6 +24,31 @@ public sealed class MainForm : XtraForm, IMainView
     private const int NavigationWidth = 240;
 
     /// <summary>
+    /// 左侧目录树的系统根节点图标键。
+    /// </summary>
+    private const string ComputerNodeImageKey = "computer";
+
+    /// <summary>
+    /// 左侧目录树的库节点图标键。
+    /// </summary>
+    private const string LibraryNodeImageKey = "library";
+
+    /// <summary>
+    /// 左侧目录树的磁盘节点图标键。
+    /// </summary>
+    private const string DriveNodeImageKey = "drive";
+
+    /// <summary>
+    /// 左侧目录树的目录节点图标键。
+    /// </summary>
+    private const string FolderNodeImageKey = "folder";
+
+    /// <summary>
+    /// 左侧目录树的可打开归档文件图标键。
+    /// </summary>
+    private const string ArchiveNodeImageKey = "archive";
+
+    /// <summary>
     /// 现代主题配色常量。
     /// </summary>
     private static readonly Color AccentColor = Color.FromArgb(0, 122, 204);
@@ -47,6 +72,7 @@ public sealed class MainForm : XtraForm, IMainView
     /// 资源筛选框、目录树、预览区和缩略图网格。
     /// </summary>
     private readonly TextEdit _filterEdit;
+    private readonly ImageList _directoryTreeImages;
     private readonly TreeView _directoryTree;
     private readonly CheckerboardPreviewControl _previewControl;
     private readonly ThumbnailGridControl _thumbnailGrid;
@@ -71,6 +97,11 @@ public sealed class MainForm : XtraForm, IMainView
     /// 同步选择状态到 X/Y 编辑器期间阻止其再次触发元数据保存事件。
     /// </summary>
     private bool _isSynchronizingMetadata;
+
+    /// <summary>
+    /// 当前归档是否允许编辑和写回，用于限制只读 WZL 资源的命令状态。
+    /// </summary>
+    private bool _canWriteArchive;
 
     /// <summary>
     /// 当前归档的逻辑槽位总数，用于底部显示当前选择位置。
@@ -108,7 +139,8 @@ public sealed class MainForm : XtraForm, IMainView
         _filterEdit.Properties.ShowNullValuePromptWhenFocused = true;
         _filterEdit.Properties.Appearance.Font = new Font("Microsoft YaHei UI", 9F);
 
-        _directoryTree = CreateDirectoryTree();
+        _directoryTreeImages = CreateDirectoryTreeImages();
+        _directoryTree = CreateDirectoryTree(_directoryTreeImages);
         _previewControl = new CheckerboardPreviewControl { Dock = DockStyle.Fill };
         _thumbnailGrid = new ThumbnailGridControl { Dock = DockStyle.Fill };
 
@@ -161,7 +193,7 @@ public sealed class MainForm : XtraForm, IMainView
 
         BindEvents();
         PopulateDriveNodes();
-        UpdateCommandState(false, false);
+        UpdateCommandState(false, false, false);
         SynchronizeMetadataEditors(null);
         Shown += (_, _) => CorrectSplitterDistance();
         Resize += (_, _) => CorrectSplitterDistance();
@@ -224,8 +256,8 @@ public sealed class MainForm : XtraForm, IMainView
     {
         using var dialog = new XtraSaveFileDialog
         {
-            Title = "另存 GEE PAK",
-            Filter = "GEE PAK 文件 (*.pak)|*.pak|WZL 文件 (*.wzl)|*.wzl|所有文件 (*.*)|*.*",
+            Title = "另存 GEEPAK3",
+            Filter = "GEEPAK3 文件 (*.pak)|*.pak|所有文件 (*.*)|*.*",
             FileName = Path.GetFileName(currentPath),
             InitialDirectory = Path.GetDirectoryName(currentPath),
             AddExtension = true,
@@ -310,6 +342,7 @@ public sealed class MainForm : XtraForm, IMainView
     {
         Text = $"{WindowTitle} - {Path.GetFileName(archive.FilePath)}";
         _archiveLabel.Text = archive.FilePath;
+        _canWriteArchive = archive.CanWrite;
         _slotCount = archive.Slots.Count;
         _imageCount = archive.ImageCount;
         RefreshEntries(archive);
@@ -358,16 +391,17 @@ public sealed class MainForm : XtraForm, IMainView
     public void SetStatus(string statusText) => _statusLabel.Text = statusText;
 
     /// <inheritdoc />
-    public void UpdateCommandState(bool archiveOpen, bool entrySelected)
+    public void UpdateCommandState(bool archiveOpen, bool entrySelected, bool canWriteArchive)
     {
-        _saveButton.Enabled = archiveOpen;
-        _saveAsButton.Enabled = archiveOpen;
-        _addButton.Enabled = archiveOpen;
-        _replaceButton.Enabled = archiveOpen && entrySelected;
+        _canWriteArchive = archiveOpen && canWriteArchive;
+        _saveButton.Enabled = _canWriteArchive;
+        _saveAsButton.Enabled = _canWriteArchive;
+        _addButton.Enabled = _canWriteArchive;
+        _replaceButton.Enabled = _canWriteArchive && entrySelected;
         _exportButton.Enabled = archiveOpen && entrySelected;
-        _deleteButton.Enabled = archiveOpen && entrySelected;
-        _xOffsetEdit.Enabled = archiveOpen && entrySelected;
-        _yOffsetEdit.Enabled = archiveOpen && entrySelected;
+        _deleteButton.Enabled = _canWriteArchive && entrySelected;
+        _xOffsetEdit.Enabled = _canWriteArchive && entrySelected;
+        _yOffsetEdit.Enabled = _canWriteArchive && entrySelected;
     }
 
     /// <inheritdoc />
@@ -392,6 +426,7 @@ public sealed class MainForm : XtraForm, IMainView
         {
             _previewControl.Image?.Dispose();
             _previewControl.Image = null;
+            _directoryTreeImages.Dispose();
         }
 
         base.Dispose(disposing);
@@ -448,10 +483,124 @@ public sealed class MainForm : XtraForm, IMainView
     }
 
     /// <summary>
+    /// 创建目录树使用的 Windows 风格小图标集合。
+    /// </summary>
+    /// <returns>已包含根节点、库、磁盘、目录和归档文件图标的图片列表。</returns>
+    private static ImageList CreateDirectoryTreeImages()
+    {
+        var images = new ImageList
+        {
+            ColorDepth = ColorDepth.Depth32Bit,
+            ImageSize = new Size(18, 18),
+            TransparentColor = Color.Transparent
+        };
+        images.Images.Add(ComputerNodeImageKey, CreateComputerIcon());
+        images.Images.Add(LibraryNodeImageKey, CreateFolderIcon(Color.FromArgb(246, 198, 60)));
+        images.Images.Add(DriveNodeImageKey, CreateDriveIcon());
+        images.Images.Add(FolderNodeImageKey, CreateFolderIcon(Color.FromArgb(246, 198, 60)));
+        images.Images.Add(ArchiveNodeImageKey, CreateArchiveIcon());
+        return images;
+    }
+
+    /// <summary>
+    /// 绘制“此电脑”节点的显示器图标。
+    /// </summary>
+    /// <returns>目录树可直接使用的位图图标。</returns>
+    private static Bitmap CreateComputerIcon()
+    {
+        var bitmap = CreateTreeIconCanvas();
+        using var graphics = Graphics.FromImage(bitmap);
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        using var screenBrush = new SolidBrush(Color.FromArgb(65, 168, 205));
+        using var borderPen = new Pen(Color.FromArgb(70, 92, 104));
+        graphics.FillRectangle(screenBrush, 3, 3, 12, 9);
+        graphics.DrawRectangle(borderPen, 3, 3, 12, 9);
+        graphics.DrawLine(borderPen, 8, 12, 8, 15);
+        graphics.DrawLine(borderPen, 5, 15, 12, 15);
+        return bitmap;
+    }
+
+    /// <summary>
+    /// 绘制目录或库节点的文件夹图标。
+    /// </summary>
+    /// <param name="bodyColor">文件夹主体颜色。</param>
+    /// <returns>目录树可直接使用的位图图标。</returns>
+    private static Bitmap CreateFolderIcon(Color bodyColor)
+    {
+        var bitmap = CreateTreeIconCanvas();
+        using var graphics = Graphics.FromImage(bitmap);
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        using var tabBrush = new SolidBrush(Color.FromArgb(255, 218, 98));
+        using var bodyBrush = new SolidBrush(bodyColor);
+        using var borderPen = new Pen(Color.FromArgb(192, 140, 35));
+        graphics.FillRectangle(tabBrush, 2, 5, 6, 3);
+        graphics.FillRectangle(bodyBrush, 2, 7, 14, 8);
+        graphics.DrawRectangle(borderPen, 2, 7, 14, 8);
+        return bitmap;
+    }
+
+    /// <summary>
+    /// 绘制本地磁盘节点图标。
+    /// </summary>
+    /// <returns>目录树可直接使用的位图图标。</returns>
+    private static Bitmap CreateDriveIcon()
+    {
+        var bitmap = CreateTreeIconCanvas();
+        using var graphics = Graphics.FromImage(bitmap);
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        using var bodyBrush = new SolidBrush(Color.FromArgb(230, 234, 236));
+        using var borderPen = new Pen(Color.FromArgb(90, 90, 90));
+        using var lightPen = new Pen(Color.FromArgb(250, 250, 250));
+        using var ledBrush = new SolidBrush(Color.FromArgb(42, 170, 78));
+        var driveBounds = new Rectangle(3, 8, 12, 6);
+        graphics.FillRectangle(bodyBrush, driveBounds);
+        graphics.DrawRectangle(borderPen, driveBounds);
+        graphics.DrawLine(lightPen, 4, 9, 14, 9);
+        graphics.FillRectangle(ledBrush, 5, 11, 3, 2);
+        return bitmap;
+    }
+
+    /// <summary>
+    /// 绘制 PAK/WZL 归档文件节点图标。
+    /// </summary>
+    /// <returns>目录树可直接使用的位图图标。</returns>
+    private static Bitmap CreateArchiveIcon()
+    {
+        var bitmap = CreateTreeIconCanvas();
+        using var graphics = Graphics.FromImage(bitmap);
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        using var pageBrush = new SolidBrush(Color.FromArgb(250, 250, 250));
+        using var foldBrush = new SolidBrush(Color.FromArgb(224, 236, 248));
+        using var borderPen = new Pen(Color.FromArgb(110, 130, 150));
+        using var accentPen = new Pen(AccentColor, 1F);
+        var pageBounds = new Rectangle(5, 2, 9, 13);
+        graphics.FillRectangle(pageBrush, pageBounds);
+        graphics.DrawRectangle(borderPen, pageBounds);
+        graphics.FillPolygon(foldBrush, new[] { new Point(10, 2), new Point(14, 6), new Point(10, 6) });
+        graphics.DrawLine(borderPen, 10, 2, 14, 6);
+        graphics.DrawLine(accentPen, 7, 10, 12, 10);
+        graphics.DrawLine(accentPen, 7, 12, 12, 12);
+        return bitmap;
+    }
+
+    /// <summary>
+    /// 创建目录树图标的透明画布。
+    /// </summary>
+    /// <returns>18 像素透明位图。</returns>
+    private static Bitmap CreateTreeIconCanvas()
+    {
+        var bitmap = new Bitmap(18, 18);
+        using var graphics = Graphics.FromImage(bitmap);
+        graphics.Clear(Color.Transparent);
+        return bitmap;
+    }
+
+    /// <summary>
     /// 创建左侧磁盘和目录浏览树，采用现代配色。
     /// </summary>
+    /// <param name="imageList">目录树节点图标列表。</param>
     /// <returns>用于打开本地 PAK/WZL 文件的目录树。</returns>
-    private static TreeView CreateDirectoryTree()
+    private static TreeView CreateDirectoryTree(ImageList imageList)
     {
         return new TreeView
         {
@@ -459,11 +608,16 @@ public sealed class MainForm : XtraForm, IMainView
             BorderStyle = BorderStyle.None,
             HideSelection = false,
             HotTracking = true,
+            ImageList = imageList,
+            ImageKey = FolderNodeImageKey,
+            SelectedImageKey = FolderNodeImageKey,
+            Indent = 24,
+            ItemHeight = 28,
             ShowLines = false,
             ShowRootLines = false,
             ShowPlusMinus = true,
-            BackColor = Color.FromArgb(245, 245, 245),
-            ForeColor = Color.FromArgb(50, 50, 50),
+            BackColor = Color.FromArgb(207, 207, 207),
+            ForeColor = Color.FromArgb(32, 32, 32),
             Font = new Font("Microsoft YaHei UI", 9F)
         };
     }
@@ -498,7 +652,7 @@ public sealed class MainForm : XtraForm, IMainView
         {
             Dock = DockStyle.Fill,
             BorderStyle = BorderStyles.NoBorder,
-            Appearance = { BackColor = Color.FromArgb(245, 245, 245) }
+            Appearance = { BackColor = Color.FromArgb(207, 207, 207) }
         };
         leftPanel.Paint += (_, e) =>
         {
@@ -708,7 +862,7 @@ public sealed class MainForm : XtraForm, IMainView
     }
 
     /// <summary>
-    /// 将本机可用盘符加入目录树根节点。
+    /// 将“此电脑”和本机可用盘符加入目录树根节点。
     /// </summary>
     private void PopulateDriveNodes()
     {
@@ -716,12 +870,23 @@ public sealed class MainForm : XtraForm, IMainView
         try
         {
             _directoryTree.Nodes.Clear();
+            var computerNode = new TreeNode("此电脑")
+            {
+                ImageKey = ComputerNodeImageKey,
+                SelectedImageKey = ComputerNodeImageKey
+            };
+            var libraryNode = new TreeNode("库")
+            {
+                ImageKey = LibraryNodeImageKey,
+                SelectedImageKey = LibraryNodeImageKey
+            };
+
+            // 库节点暂不承载业务命令，仅作为资源管理器式导航分组占位。
+            _directoryTree.Nodes.Add(computerNode);
+            _directoryTree.Nodes.Add(libraryNode);
             foreach (var drive in DriveInfo.GetDrives().Where(drive => drive.IsReady))
             {
-                var label = string.IsNullOrWhiteSpace(drive.VolumeLabel)
-                    ? $"{drive.Name}"
-                    : $"{drive.VolumeLabel} ({drive.Name.TrimEnd(Path.DirectorySeparatorChar)})";
-                AddDirectoryNode(_directoryTree.Nodes, label, drive.RootDirectory.FullName);
+                AddDriveNode(_directoryTree.Nodes, drive);
             }
         }
         finally
@@ -783,7 +948,12 @@ public sealed class MainForm : XtraForm, IMainView
                          .Where(IsArchiveFile)
                          .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
             {
-                parentNode.Nodes.Add(new TreeNode(Path.GetFileName(archivePath)) { Tag = archivePath });
+                parentNode.Nodes.Add(new TreeNode(Path.GetFileName(archivePath))
+                {
+                    Tag = archivePath,
+                    ImageKey = ArchiveNodeImageKey,
+                    SelectedImageKey = ArchiveNodeImageKey
+                });
             }
         }
         catch (UnauthorizedAccessException)
@@ -797,14 +967,38 @@ public sealed class MainForm : XtraForm, IMainView
     }
 
     /// <summary>
+    /// 向“此电脑”节点加入一个本地磁盘节点。
+    /// </summary>
+    /// <param name="nodes">目标节点集合。</param>
+    /// <param name="drive">本机磁盘信息。</param>
+    private static void AddDriveNode(TreeNodeCollection nodes, DriveInfo drive)
+    {
+        var driveName = drive.Name.TrimEnd(Path.DirectorySeparatorChar);
+        var label = string.IsNullOrWhiteSpace(drive.VolumeLabel)
+            ? $"({driveName}) 本地磁盘"
+            : $"({driveName}) {drive.VolumeLabel}";
+        AddDirectoryNode(nodes, label, drive.RootDirectory.FullName, DriveNodeImageKey);
+    }
+
+    /// <summary>
     /// 向目录树加入延迟读取的目录节点。
     /// </summary>
     /// <param name="nodes">目标节点集合。</param>
     /// <param name="label">界面显示名称。</param>
     /// <param name="directoryPath">目录完整路径。</param>
-    private static void AddDirectoryNode(TreeNodeCollection nodes, string label, string directoryPath)
+    /// <param name="imageKey">节点使用的图标键。</param>
+    private static void AddDirectoryNode(
+        TreeNodeCollection nodes,
+        string label,
+        string directoryPath,
+        string imageKey = FolderNodeImageKey)
     {
-        var node = new TreeNode(label) { Tag = directoryPath };
+        var node = new TreeNode(label)
+        {
+            Tag = directoryPath,
+            ImageKey = imageKey,
+            SelectedImageKey = imageKey
+        };
         node.Nodes.Add(new TreeNode());
         nodes.Add(node);
     }
@@ -830,7 +1024,7 @@ public sealed class MainForm : XtraForm, IMainView
         _isSynchronizingMetadata = true;
         try
         {
-            var canEdit = entry is { IsEmpty: false };
+            var canEdit = _canWriteArchive && entry is { IsEmpty: false };
             _xOffsetEdit.EditValue = canEdit ? entry!.X : 0;
             _yOffsetEdit.EditValue = canEdit ? entry!.Y : 0;
             _xOffsetEdit.Enabled = canEdit;
@@ -849,7 +1043,7 @@ public sealed class MainForm : XtraForm, IMainView
     /// <param name="isX">是否正在修改 X 偏移。</param>
     private void UpdateOffsetFromEditor(SpinEdit editor, bool isX)
     {
-        if (_isSynchronizingMetadata || SelectedEntry is not { IsEmpty: false } entry)
+        if (_isSynchronizingMetadata || !_canWriteArchive || SelectedEntry is not { IsEmpty: false } entry)
         {
             return;
         }
@@ -894,12 +1088,12 @@ public sealed class MainForm : XtraForm, IMainView
             OpenRequested?.Invoke(this, EventArgs.Empty);
             e.SuppressKeyPress = true;
         }
-        else if (e.Control && e.Shift && e.KeyCode == Keys.S)
+        else if (e.Control && e.Shift && e.KeyCode == Keys.S && _saveAsButton.Enabled)
         {
             SaveAsRequested?.Invoke(this, EventArgs.Empty);
             e.SuppressKeyPress = true;
         }
-        else if (e.Control && e.KeyCode == Keys.S)
+        else if (e.Control && e.KeyCode == Keys.S && _saveButton.Enabled)
         {
             SaveRequested?.Invoke(this, EventArgs.Empty);
             e.SuppressKeyPress = true;

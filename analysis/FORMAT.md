@@ -49,3 +49,25 @@ offset[i] = encrypted[i] XOR NOT(indexKey[i % 64]) XOR i
 已确认 GEEPAK3 主格式、索引公式、图片块头、zlib 载荷和六种像素布局。默认密码 `QQ1167746` 的三组密钥存在公开交叉实现，可用于读取和写回。
 
 样本使用自定义密码。参考程序把任意密码交给受保护的派生过程生成 256、256、1024 字节密钥；该派生过程尚未恢复为可审计的 C# 算法。因此本项目通过 `PakKeyProfiles.json` 隔离外部精确密钥，避免错误解析或写坏归档。
+
+## 传统 WZL/WZX 样本
+
+- `H:\Mir2客户端\热血传奇23周年客户端\data\cbohair_ck.wzl`：SHA-256 `3A253925E1BAAF5F84CBFB332FCA5B2D02BEFA444180216197CC968A42742D51`
+- `H:\Mir2客户端\热血传奇23周年客户端\data\cbohair_ck.wzx`：SHA-256 `DDD3C6848ED778DF2C976675D66DB8E39928A6670020720209ED3538B9CD0D34`
+
+已确认 `cbohair_ck.wzx` 为 48 字节保留头加 2816 个 UInt32 小端偏移，头部 `0x2C` 处也记录 2816。`cbohair_ck.wzl` 为 64 字节保留头，首个有效图片块偏移为 64。
+
+WZL 图片块头与当前 GEE 图片解码结构一致：
+
+```text
++0x00 Byte   图片类型
++0x03 Byte   Alpha 标志
++0x04 UInt16 宽度
++0x06 UInt16 高度
++0x08 Int16  X 偏移
++0x0A Int16  Y 偏移
++0x0C UInt32 zlib 长度，0 表示原始载荷
++0x10        像素载荷
+```
+
+WZL/WZX 目前作为只读资源打开，复用图片预览和 PNG 导出链路，不复用 GEEPAK3 加密索引和写回链路。

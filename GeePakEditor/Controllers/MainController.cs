@@ -39,7 +39,7 @@ public sealed class MainController
         _view.MetadataChanged += (_, _) => MarkMetadataChanged();
         _view.ThumbnailsRequested += (_, arguments) => Execute(() => LoadThumbnails(arguments.Entries));
         _view.ClosingRequested += (_, arguments) => ConfirmClosing(arguments);
-        _view.UpdateCommandState(false, false);
+        _view.UpdateCommandState(false, false, false);
     }
 
     /// <summary>
@@ -61,28 +61,14 @@ public sealed class MainController
             return;
         }
 
-        ValidateArchivePath(filePath);
-        _archiveService.ValidateArchiveFile(filePath);
-
         var finalStatus = "未打开归档";
-        _view.SetBusy(true, "正在读取并验证 PAK...");
+        _view.SetStatus("正在识别资源归档...");
         try
         {
-            var configuredPassword = _passwordService.ResolvePassword(filePath);
-            var opened = TryOpenWithKnownPassword(filePath, configuredPassword)
-                ?? TryOpenWithKnownPassword(filePath, GeePakConstants.DefaultPassword);
-            var shouldSavePassword = false;
+            var opened = OpenArchiveByFormat(filePath, out var shouldSavePassword);
             if (opened is null)
             {
-                // 只有已保存密码和内置默认密码均无法打开时，才让用户输入自定义密码。
-                var password = _view.PromptPassword(filePath, configuredPassword);
-                if (string.IsNullOrEmpty(password))
-                {
-                    return;
-                }
-
-                opened = _archiveService.Open(filePath, password);
-                shouldSavePassword = true;
+                return;
             }
 
             _archive = opened;
@@ -94,14 +80,69 @@ public sealed class MainController
             }
 
             _view.BindArchive(opened);
-            _view.UpdateCommandState(true, false);
+            _view.UpdateCommandState(true, false, opened.CanWrite);
             _view.ShowPreview(null);
-            finalStatus = $"已打开 {opened.ImageCount:N0} 张图片";
+            finalStatus = opened.CanWrite
+                ? $"已打开 {opened.ImageCount:N0} 张图片"
+                : $"已只读打开 {opened.ImageCount:N0} 张图片";
         }
         finally
         {
             _view.SetBusy(false, finalStatus);
         }
+    }
+
+    /// <summary>
+    /// 按文件扩展名和实际签名选择 GEEPAK3 或传统 WZL/WZX 打开链路。
+    /// </summary>
+    /// <param name="filePath">用户选择的本地归档路径。</param>
+    /// <param name="shouldSavePassword">返回是否需要保存本次手动输入的密码。</param>
+    /// <returns>已打开的资源归档。</returns>
+    private PakArchive? OpenArchiveByFormat(string filePath, out bool shouldSavePassword)
+    {
+        shouldSavePassword = false;
+        var extension = GetArchiveExtension(filePath);
+        var isGeePak3 = _archiveService.IsGeePak3Archive(filePath);
+        if (isGeePak3)
+        {
+            _archiveService.ValidateArchiveFile(filePath);
+            return OpenGeePak3(filePath, out shouldSavePassword);
+        }
+
+        if (string.Equals(extension, ".wzl", StringComparison.OrdinalIgnoreCase))
+        {
+            return _archiveService.OpenWzl(filePath);
+        }
+
+        throw new PakFormatException("文件签名不是 GEEPAK3；PAK 文件当前仅支持可精确写回的 GEEPAK3。");
+    }
+
+    /// <summary>
+    /// 打开 GEEPAK3 归档，并在已知密码都失败后才请求用户手动输入。
+    /// </summary>
+    /// <param name="filePath">GEEPAK3 归档路径。</param>
+    /// <param name="shouldSavePassword">返回是否保存手动输入的密码。</param>
+    /// <returns>已解密的 GEEPAK3 归档。</returns>
+    private PakArchive? OpenGeePak3(string filePath, out bool shouldSavePassword)
+    {
+        var configuredPassword = _passwordService.ResolvePassword(filePath);
+        var opened = TryOpenWithKnownPassword(filePath, configuredPassword)
+            ?? TryOpenWithKnownPassword(filePath, GeePakConstants.DefaultPassword);
+        shouldSavePassword = false;
+        if (opened is not null)
+        {
+            return opened;
+        }
+
+        // 只有已保存密码和内置默认密码均无法打开时，才让用户输入自定义密码。
+        var password = _view.PromptPassword(filePath, configuredPassword);
+        if (string.IsNullOrEmpty(password))
+        {
+            return null;
+        }
+
+        shouldSavePassword = true;
+        return _archiveService.Open(filePath, password);
     }
 
     /// <summary>
@@ -129,19 +170,20 @@ public sealed class MainController
     }
 
     /// <summary>
-    /// 验证用户选择的文件扩展名，避免普通文件进入密码确认流程。
+    /// 返回当前支持入口允许的归档扩展名。
     /// </summary>
     /// <param name="filePath">用户选择的本地文件路径。</param>
-    private static void ValidateArchivePath(string filePath)
+    /// <returns>小写无关的扩展名。</returns>
+    private static string GetArchiveExtension(string filePath)
     {
         var extension = Path.GetExtension(filePath);
         if (string.Equals(extension, ".pak", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(extension, ".wzl", StringComparison.OrdinalIgnoreCase))
         {
-            return;
+            return extension;
         }
 
-        throw new InvalidOperationException("仅支持打开 .pak 或 .wzl 格式的 GEEPAK3 归档文件。");
+        throw new InvalidOperationException("仅支持打开 .pak 或 .wzl 资源归档文件。");
     }
 
     /// <summary>
@@ -260,7 +302,7 @@ public sealed class MainController
     {
         var entry = _view.SelectedEntry;
         var validSelection = _archive is not null && entry is { IsEmpty: false };
-        _view.UpdateCommandState(_archive is not null, validSelection);
+        _view.UpdateCommandState(_archive is not null, validSelection, _archive?.CanWrite == true);
         if (!validSelection || entry is null)
         {
             _view.ShowPreview(null);
@@ -279,7 +321,7 @@ public sealed class MainController
     private void MarkMetadataChanged()
     {
         var entry = _view.SelectedEntry;
-        if (_archive is null || entry is null || entry.IsEmpty)
+        if (_archive is null || !_archive.CanWrite || entry is null || entry.IsEmpty)
         {
             return;
         }
@@ -393,7 +435,7 @@ public sealed class MainController
     /// </summary>
     private PakArchive RequireArchive()
     {
-        return _archive ?? throw new InvalidOperationException("请先打开一个 GEEPAK3 文件。");
+        return _archive ?? throw new InvalidOperationException("请先打开一个资源归档文件。");
     }
 
     /// <summary>

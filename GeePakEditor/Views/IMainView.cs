@@ -89,8 +89,8 @@ public interface IMainView
     /// <summary>更新底部状态文本。</summary>
     void SetStatus(string statusText);
 
-    /// <summary>根据归档和选择状态启用或禁用命令。</summary>
-    void UpdateCommandState(bool archiveOpen, bool entrySelected);
+    /// <summary>根据归档、选择和写回能力启用或禁用命令。</summary>
+    void UpdateCommandState(bool archiveOpen, bool entrySelected, bool canWriteArchive);
 
     /// <summary>显示错误消息。</summary>
     void ShowError(string message);
