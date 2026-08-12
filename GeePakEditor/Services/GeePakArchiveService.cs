@@ -31,7 +31,7 @@ public sealed class GeePakArchiveService : IPakArchiveService
         if (!_keyProvider.TryGetProfile(password, out var keyProfile) || keyProfile is null)
         {
             throw new PakFormatException(
-                $"密码“{password}”没有可用的 GEEPAK3 派生密钥。请把该密码对应的三组 Base64 密钥写入：{_keyProvider.ProfileFilePath}");
+                $"密码“{password}”未能生成可用的 GEEPAK3 派生密钥，请确认密码是否正确。");
         }
 
         var data = File.ReadAllBytes(filePath);

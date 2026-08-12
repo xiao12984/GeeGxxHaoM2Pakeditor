@@ -11,8 +11,8 @@
 - 修改图片 X/Y 绘制偏移。
 - 保存或另存为 GEEPAK3，重新生成加密索引和图片块头。
 - 未修改图片保留原始压缩载荷和未识别块头字段。
-- 支持 `FilePassword.txt` 的 `完整路径|密码` 配置格式。
-- 支持默认密钥和外部 `PakKeyProfiles.json` 精确密钥配置。
+- 支持 `FilePassword.txt` 的 `完整路径|密码` 配置格式，并在打开时预填密码。
+- 对非默认密码自动调用本机离线派生引擎获取精确密钥。
 
 ## 界面与技术栈
 
@@ -42,7 +42,11 @@ GEEPAK3 密码需要派生三组密钥：
 - 256 字节全局头密钥
 - 1024 字节图片块头密钥
 
-项目内置公开默认密码 `QQ1167746` 对应的密钥。其他密码需要复制 [PakKeyProfiles.example.json](GeePakEditor/PakKeyProfiles.example.json) 为 `GeePakEditor/PakKeyProfiles.json`，再填写精确的 Base64 密钥：
+项目内置公开默认密码 `QQ1167746` 对应的密钥。其他密码会自动调用本机离线派生引擎，不需要手工填写三组 Base64 密钥；密码仅以 `完整路径|密码` 格式保存在同目录的 `FilePassword.txt` 中。
+
+当前实现会依次查找已启动的本地离线引擎、`GEE_PAK_BRIDGE_VSIX` 环境变量指定的 VSIX、程序目录 `PakBridgeSource\boo-ngom-editor.vsix`、当前目录同路径以及系统临时目录的 `boo-ngom-editor.vsix`。首次使用时只解压到当前用户的本地缓存目录，不会把第三方 EXE/DLL、密码或派生密钥写入 Git 仓库。
+
+`PakKeyProfiles.json` 仍可作为旧环境的兼容回退配置：
 
 ```json
 {
@@ -57,7 +61,7 @@ GEEPAK3 密码需要派生三组密钥：
 }
 ```
 
-参考程序的任意密码派生入口受 VMProtect 保护，目前尚未恢复为可审计的 C# 算法。缺少精确密钥时，编辑器会拒绝解析，不会猜测索引或覆盖原文件。
+参考程序的任意密码派生入口受 VMProtect 保护。当前通过本机已有的离线派生引擎调用其确定性接口；若离线引擎不可用，编辑器会给出明确的本机组件错误，不会猜测索引或覆盖原文件。
 
 ## 项目结构
 

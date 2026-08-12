@@ -21,7 +21,8 @@ internal static class Program
         Application.SetCompatibleTextRenderingDefault(false);
         UserLookAndFeel.Default.SetSkinStyle("Office 2019 Colorful");
 
-        var keyProvider = new PakKeyProvider();
+        // 密钥服务会在程序关闭时清理本次启动的本地派生引擎。
+        using var keyProvider = new PakKeyProvider();
         var imageCodec = new PakImageCodec();
         var archiveService = new GeePakArchiveService(keyProvider, imageCodec);
         var passwordService = new PakPasswordService();

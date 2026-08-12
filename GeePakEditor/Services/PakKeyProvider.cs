@@ -6,10 +6,12 @@ using GeePakEditor.Models;
 namespace GeePakEditor.Services;
 
 /// <summary>
-/// 从内置默认配置和 PakKeyProfiles.json 中查找 GEEPAK3 密钥。
+/// 从内置配置、兼容 JSON 和本机离线派生引擎获取 GEEPAK3 密钥。
 /// </summary>
-public sealed class PakKeyProvider : IPakKeyProvider
+public sealed class PakKeyProvider : IPakKeyProvider, IDisposable
 {
+    private readonly PakBridgeKeyDerivationService _bridgeKeyDerivationService = new();
+
     /// <inheritdoc />
     public string ProfileFilePath => Path.Combine(AppContext.BaseDirectory, "PakKeyProfiles.json");
 
@@ -40,8 +42,27 @@ public sealed class PakKeyProvider : IPakKeyProvider
             return true;
         }
 
+        // 非默认密码由本机离线引擎自动派生，避免要求用户手动填写 Base64 密钥。
+        if (_bridgeKeyDerivationService.TryDerive(password, out profile, out var error))
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(error))
+        {
+            throw new PakFormatException(error);
+        }
+
         profile = null;
         return false;
+    }
+
+    /// <summary>
+    /// 释放当前编辑器启动的本地密码派生进程。
+    /// </summary>
+    public void Dispose()
+    {
+        _bridgeKeyDerivationService.Dispose();
     }
 
     /// <summary>

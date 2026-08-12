@@ -14,7 +14,11 @@
 
 ## 密码和密钥
 
-GEEPAK3 的密码会先派生三组密钥。当前项目内置公开默认密码 `QQ1167746` 的密钥；其他密码需要复制 `PakKeyProfiles.example.json` 为程序目录中的 `PakKeyProfiles.json`，再配置精确密钥：
+GEEPAK3 的密码会先派生三组密钥。当前项目内置公开默认密码 `QQ1167746` 的密钥；其他密码会自动调用本机离线派生引擎，不需要手工填写 Base64 密钥。`FilePassword.txt` 继续保存 `完整路径|密码`，并在下次打开时作为预填值。
+
+离线引擎按 `GEE_PAK_BRIDGE_VSIX` 环境变量、程序目录 `PakBridgeSource\boo-ngom-editor.vsix`、当前目录同路径和系统临时目录的顺序查找。首次使用只会解压到当前用户的本地缓存目录，第三方运行文件不会进入源码仓库。
+
+`PakKeyProfiles.json` 仅用于兼容已有的精确密钥配置：
 
 ```json
 {
