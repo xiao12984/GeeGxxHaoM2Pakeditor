@@ -122,20 +122,19 @@ public sealed class MainForm : XtraForm, IMainView
         _workspaceSplit = new SplitContainerControl
         {
             Dock = DockStyle.Fill,
-            Horizontal = false,
+            Horizontal = true,
             FixedPanel = SplitFixedPanel.Panel1,
             SplitterPosition = NavigationWidth
         };
         _resourceSplit = new SplitContainerControl
         {
             Dock = DockStyle.Fill,
-            Horizontal = true,
+            Horizontal = false,
             FixedPanel = SplitFixedPanel.Panel1,
             SplitterPosition = 376
         };
 
         BuildWorkspace();
-        Controls.Add(CreateToolbar());
         Controls.Add(_workspaceSplit);
         Controls.Add(CreateStatusPanel());
 
@@ -460,7 +459,15 @@ public sealed class MainForm : XtraForm, IMainView
         _workspaceSplit.Panel1.MinSize = 180;
         _workspaceSplit.Panel2.MinSize = 520;
         _workspaceSplit.Panel1.Controls.Add(leftSplit);
-        _workspaceSplit.Panel2.Controls.Add(_resourceSplit);
+
+        var resourceHost = new PanelControl
+        {
+            Dock = DockStyle.Fill,
+            BorderStyle = BorderStyles.NoBorder
+        };
+        resourceHost.Controls.Add(_resourceSplit);
+        resourceHost.Controls.Add(CreateToolbar());
+        _workspaceSplit.Panel2.Controls.Add(resourceHost);
     }
 
     /// <summary>
