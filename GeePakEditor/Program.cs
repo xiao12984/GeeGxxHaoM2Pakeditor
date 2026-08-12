@@ -1,3 +1,4 @@
+using System.Drawing;
 using DevExpress.LookAndFeel;
 using GeePakEditor.Controllers;
 using GeePakEditor.Services;
@@ -19,7 +20,9 @@ internal static class Program
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
-        UserLookAndFeel.Default.SetSkinStyle("Office 2019 Colorful");
+        UserLookAndFeel.Default.SetSkinStyle("WXI");
+        UserLookAndFeel.Default.SkinMaskColor = Color.FromArgb(0, 122, 204);
+        UserLookAndFeel.Default.SkinMaskColor2 = Color.FromArgb(0, 122, 204);
 
         // 密钥服务会在程序关闭时清理本次启动的本地派生引擎。
         using var keyProvider = new PakKeyProvider();

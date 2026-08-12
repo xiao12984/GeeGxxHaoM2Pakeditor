@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
 using DevExpress.Utils;
 using DevExpress.XtraEditors;
@@ -20,7 +21,16 @@ public sealed class MainForm : XtraForm, IMainView
     /// <summary>
     /// 左侧目录树的固定宽度。
     /// </summary>
-    private const int NavigationWidth = 230;
+    private const int NavigationWidth = 240;
+
+    /// <summary>
+    /// 现代主题配色常量。
+    /// </summary>
+    private static readonly Color AccentColor = Color.FromArgb(0, 122, 204);
+    private static readonly Color AccentLightColor = Color.FromArgb(230, 244, 255);
+    private static readonly Color PanelBackgroundColor = Color.FromArgb(250, 250, 250);
+    private static readonly Color BorderColor = Color.FromArgb(224, 224, 224);
+    private static readonly Color StatusBarBackgroundColor = Color.FromArgb(240, 240, 240);
 
     /// <summary>
     /// 顶部命令区按钮。
@@ -73,7 +83,7 @@ public sealed class MainForm : XtraForm, IMainView
     private int _imageCount;
 
     /// <summary>
-    /// 创建基于 DevExpress 23.2 的传统资源编辑器主界面。
+    /// 创建基于 DevExpress 23.2 的现代化资源编辑器主界面。
     /// </summary>
     public MainForm()
     {
@@ -83,6 +93,7 @@ public sealed class MainForm : XtraForm, IMainView
         Size = new Size(1360, 840);
         Font = new Font("Microsoft YaHei UI", 9F);
         KeyPreview = true;
+        Appearance.BackColor = PanelBackgroundColor;
 
         _openButton = CreateCommandButton("打开", "Open;Size32x32");
         _saveButton = CreateCommandButton("保存", "Save;Size32x32");
@@ -95,6 +106,7 @@ public sealed class MainForm : XtraForm, IMainView
         _filterEdit = new TextEdit { Width = 220 };
         _filterEdit.Properties.NullValuePrompt = "筛选索引、格式或状态";
         _filterEdit.Properties.ShowNullValuePromptWhenFocused = true;
+        _filterEdit.Properties.Appearance.Font = new Font("Microsoft YaHei UI", 9F);
 
         _directoryTree = CreateDirectoryTree();
         _previewControl = new CheckerboardPreviewControl { Dock = DockStyle.Fill };
@@ -103,17 +115,20 @@ public sealed class MainForm : XtraForm, IMainView
         _archiveLabel = new LabelControl
         {
             AutoSizeMode = LabelAutoSizeMode.None,
-            Text = "未打开归档"
+            Text = "未打开归档",
+            Appearance = { ForeColor = Color.FromArgb(100, 100, 100) }
         };
         _selectionLabel = new LabelControl
         {
             AutoSizeMode = LabelAutoSizeMode.None,
-            Text = "0/0/0"
+            Text = "0/0/0",
+            Appearance = { ForeColor = AccentColor, Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold) }
         };
         _statusLabel = new LabelControl
         {
             AutoSizeMode = LabelAutoSizeMode.None,
-            Text = "就绪"
+            Text = "就绪",
+            Appearance = { ForeColor = Color.FromArgb(140, 140, 140) }
         };
         _progressBar = new MarqueeProgressBarControl { Visible = false, Width = 120 };
         _xOffsetEdit = CreateOffsetEditor();
@@ -135,8 +150,14 @@ public sealed class MainForm : XtraForm, IMainView
         };
 
         BuildWorkspace();
-        Controls.Add(_workspaceSplit);
-        Controls.Add(CreateStatusPanel());
+        var mainLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
+        mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 96F));
+        mainLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32F));
+        mainLayout.Controls.Add(CreateHeaderPanel(), 0, 0);
+        mainLayout.Controls.Add(_workspaceSplit, 0, 1);
+        mainLayout.Controls.Add(CreateStatusPanel(), 0, 2);
+        Controls.Add(mainLayout);
 
         BindEvents();
         PopulateDriveNodes();
@@ -377,7 +398,69 @@ public sealed class MainForm : XtraForm, IMainView
     }
 
     /// <summary>
-    /// 创建统一的大图标命令按钮。
+    /// 创建顶部品牌栏，包含应用图标、标题和版本信息。
+    /// </summary>
+    /// <returns>品牌栏面板。</returns>
+    private Control CreateHeaderPanel()
+    {
+        var header = new PanelControl
+        {
+            Dock = DockStyle.Fill,
+            BorderStyle = BorderStyles.NoBorder,
+            Appearance = { BackColor = Color.White }
+        };
+        header.Paint += (_, e) =>
+        {
+            using var pen = new Pen(BorderColor, 1F);
+            e.Graphics.DrawLine(pen, 0, header.Height - 1, header.Width, header.Height - 1);
+        };
+
+        var headerLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty
+        };
+        // 左侧品牌区保持固定宽度，命令区自动占用剩余空间并随窗口缩放。
+        headerLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 320F));
+        headerLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+
+        var titleHost = new PanelControl
+        {
+            Dock = DockStyle.Fill,
+            BorderStyle = BorderStyles.NoBorder,
+            Appearance = { BackColor = Color.White }
+        };
+        var titleLabel = new LabelControl
+        {
+            Text = "GEE PAK 资源编辑器",
+            Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Bold),
+            Location = new Point(16, 10),
+            AutoSizeMode = LabelAutoSizeMode.None,
+            Size = new Size(300, 28),
+            Appearance = { ForeColor = Color.FromArgb(30, 30, 30) }
+        };
+        var subtitleLabel = new LabelControl
+        {
+            Text = "Wil · Wis · Wzl · Pak 格式支持",
+            Font = new Font("Microsoft YaHei UI", 8F),
+            Location = new Point(16, 38),
+            AutoSizeMode = LabelAutoSizeMode.None,
+            Size = new Size(300, 18),
+            Appearance = { ForeColor = Color.FromArgb(150, 150, 150) }
+        };
+        titleHost.Controls.Add(titleLabel);
+        titleHost.Controls.Add(subtitleLabel);
+        headerLayout.Controls.Add(titleHost, 0, 0);
+        headerLayout.Controls.Add(CreateToolbar(), 1, 0);
+        header.Controls.Add(headerLayout);
+        return header;
+    }
+
+    /// <summary>
+    /// 创建统一的大图标命令按钮，采用现代扁平圆角风格。
     /// </summary>
     /// <param name="text">按钮显示文字。</param>
     /// <param name="imageUri">DevExpress 内置图标地址。</param>
@@ -387,17 +470,24 @@ public sealed class MainForm : XtraForm, IMainView
         var button = new SimpleButton
         {
             Text = text,
-            Size = new Size(72, 68),
-            MinimumSize = new Size(72, 68),
-            ToolTip = text
+            Size = new Size(68, 72),
+            MinimumSize = new Size(68, 72),
+            ToolTip = text,
+            Font = new Font("Microsoft YaHei UI", 8F),
+            Appearance =
+            {
+                BackColor = Color.Transparent,
+                ForeColor = Color.FromArgb(60, 60, 60)
+            }
         };
         button.ImageOptions.ImageUri.Uri = imageUri;
         button.ImageOptions.Location = ImageLocation.TopCenter;
+        button.ImageOptions.SvgImageSize = new Size(24, 24);
         return button;
     }
 
     /// <summary>
-    /// 创建左侧磁盘和目录浏览树。
+    /// 创建左侧磁盘和目录浏览树，采用现代配色。
     /// </summary>
     /// <returns>用于打开本地 PAK/WZL 文件的目录树。</returns>
     private static TreeView CreateDirectoryTree()
@@ -405,12 +495,15 @@ public sealed class MainForm : XtraForm, IMainView
         return new TreeView
         {
             Dock = DockStyle.Fill,
-            BorderStyle = BorderStyle.FixedSingle,
+            BorderStyle = BorderStyle.None,
             HideSelection = false,
-            HotTracking = false,
+            HotTracking = true,
             ShowLines = false,
             ShowRootLines = false,
-            ShowPlusMinus = true
+            ShowPlusMinus = true,
+            BackColor = Color.FromArgb(245, 245, 245),
+            ForeColor = Color.FromArgb(50, 50, 50),
+            Font = new Font("Microsoft YaHei UI", 9F)
         };
     }
 
@@ -435,115 +528,185 @@ public sealed class MainForm : XtraForm, IMainView
     }
 
     /// <summary>
-    /// 组合目录树、棋盘预览区和缩略图网格的主工作区。
+    /// 组合目录树、棋盘预览区和缩略图网格的现代化主工作区。
     /// </summary>
     private void BuildWorkspace()
     {
-        var leftSplit = new SplitContainerControl
+        // 左侧目录树面板，带圆角边框感
+        var leftPanel = new PanelControl
         {
             Dock = DockStyle.Fill,
-            Horizontal = true,
-            FixedPanel = SplitFixedPanel.Panel1,
-            SplitterPosition = 414
+            BorderStyle = BorderStyles.NoBorder,
+            Appearance = { BackColor = Color.FromArgb(245, 245, 245) }
         };
-        leftSplit.Panel1.MinSize = 180;
-        leftSplit.Panel2.MinSize = 80;
-        leftSplit.Panel1.Controls.Add(_directoryTree);
-        leftSplit.Panel2.Controls.Add(new PanelControl { Dock = DockStyle.Fill, BorderStyle = BorderStyles.NoBorder });
-
-        _resourceSplit.Panel1.MinSize = 220;
-        _resourceSplit.Panel2.MinSize = 180;
-        _resourceSplit.Panel1.Controls.Add(_previewControl);
-        _resourceSplit.Panel2.Controls.Add(_thumbnailGrid);
+        leftPanel.Paint += (_, e) =>
+        {
+            using var pen = new Pen(BorderColor);
+            e.Graphics.DrawLine(pen, leftPanel.Width - 1, 0, leftPanel.Width - 1, leftPanel.Height);
+        };
+        leftPanel.Controls.Add(_directoryTree);
 
         _workspaceSplit.Panel1.MinSize = 180;
         _workspaceSplit.Panel2.MinSize = 520;
-        _workspaceSplit.Panel1.Controls.Add(leftSplit);
+        _workspaceSplit.Panel1.Controls.Add(leftPanel);
+
+        // 预览区面板，白色背景带下边框
+        var previewPanel = new PanelControl
+        {
+            Dock = DockStyle.Fill,
+            BorderStyle = BorderStyles.NoBorder,
+            Appearance = { BackColor = Color.White }
+        };
+        previewPanel.Paint += (_, e) =>
+        {
+            using var pen = new Pen(BorderColor);
+            e.Graphics.DrawLine(pen, 0, previewPanel.Height - 1, previewPanel.Width, previewPanel.Height - 1);
+        };
+        previewPanel.Controls.Add(_previewControl);
+
+        // 缩略图网格面板，白色背景
+        var gridPanel = new PanelControl
+        {
+            Dock = DockStyle.Fill,
+            BorderStyle = BorderStyles.NoBorder,
+            Appearance = { BackColor = Color.White }
+        };
+        gridPanel.Controls.Add(_thumbnailGrid);
+
+        _resourceSplit.Panel1.MinSize = 220;
+        _resourceSplit.Panel2.MinSize = 180;
+        _resourceSplit.Panel1.Controls.Add(previewPanel);
+        _resourceSplit.Panel2.Controls.Add(gridPanel);
 
         var resourceHost = new PanelControl
         {
             Dock = DockStyle.Fill,
-            BorderStyle = BorderStyles.NoBorder
+            BorderStyle = BorderStyles.NoBorder,
+            Appearance = { BackColor = PanelBackgroundColor }
         };
         resourceHost.Controls.Add(_resourceSplit);
-        resourceHost.Controls.Add(CreateToolbar());
         _workspaceSplit.Panel2.Controls.Add(resourceHost);
     }
 
     /// <summary>
-    /// 创建顶部大图标命令栏和资源筛选框。
+    /// 创建顶部大图标命令栏，含分组分隔线和资源筛选框。
     /// </summary>
     /// <returns>主窗口顶部工具栏。</returns>
     private Control CreateToolbar()
     {
         var toolbar = new PanelControl
         {
-            Dock = DockStyle.Top,
-            Height = 76,
-            BorderStyle = BorderStyles.NoBorder
+            Dock = DockStyle.Fill,
+            BorderStyle = BorderStyles.NoBorder,
+            Appearance = { BackColor = Color.Transparent }
         };
-        var commands = new FlowLayoutPanel
+        var buttonFlow = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = false,
-            Padding = new Padding(8, 4, 0, 4)
+            AutoScroll = true,
+            Padding = new Padding(0, 8, 8, 8)
         };
-        commands.Controls.AddRange(
-        [
-            _openButton,
-            _saveButton,
-            _saveAsButton,
-            _addButton,
-            _replaceButton,
-            _exportButton,
-            _deleteButton
-        ]);
-        var filterHost = new PanelControl
+
+        // 添加按钮组 1：文件操作
+        buttonFlow.Controls.Add(CreateToolbarSeparator());
+        buttonFlow.Controls.Add(_openButton);
+        buttonFlow.Controls.Add(_saveButton);
+        buttonFlow.Controls.Add(_saveAsButton);
+
+        // 添加分隔线和按钮组 2：编辑操作
+        buttonFlow.Controls.Add(CreateToolbarSeparator());
+        buttonFlow.Controls.Add(_addButton);
+        buttonFlow.Controls.Add(_replaceButton);
+        buttonFlow.Controls.Add(_exportButton);
+        buttonFlow.Controls.Add(_deleteButton);
+
+        // 添加分隔线和筛选框
+        buttonFlow.Controls.Add(CreateToolbarSeparator());
+        var filterWrapper = new PanelControl
         {
-            Dock = DockStyle.Right,
-            Width = 240,
+            Size = new Size(200, 72),
             BorderStyle = BorderStyles.NoBorder,
-            Padding = new Padding(8, 24, 8, 20)
+            Appearance = { BackColor = Color.Transparent },
+            Padding = new Padding(0, 20, 0, 20)
         };
         _filterEdit.Dock = DockStyle.Fill;
-        filterHost.Controls.Add(_filterEdit);
-        toolbar.Controls.Add(commands);
-        toolbar.Controls.Add(filterHost);
+        filterWrapper.Controls.Add(_filterEdit);
+        buttonFlow.Controls.Add(filterWrapper);
+
+        toolbar.Controls.Add(buttonFlow);
         return toolbar;
     }
 
     /// <summary>
-    /// 创建文件路径、选择位置、状态文字和 X/Y 编辑器构成的底部状态栏。
+    /// 创建工具栏按钮组分隔线。
+    /// </summary>
+    private static Control CreateToolbarSeparator()
+    {
+        return new PanelControl
+        {
+            Size = new Size(2, 72),
+            Padding = new Padding(4, 0, 4, 0),
+            BorderStyle = BorderStyles.NoBorder,
+            Appearance = { BackColor = Color.Transparent }
+        };
+    }
+
+    /// <summary>
+    /// 创建现代化底部状态栏，包含文件路径、选择位置、状态文字和 X/Y 编辑器。
     /// </summary>
     /// <returns>主窗口底部状态栏。</returns>
     private Control CreateStatusPanel()
     {
         var panel = new PanelControl
         {
-            Dock = DockStyle.Bottom,
-            Height = 29,
+            Dock = DockStyle.Fill,
             BorderStyle = BorderStyles.NoBorder,
-            Padding = new Padding(4, 3, 4, 3)
+            Appearance = { BackColor = StatusBarBackgroundColor },
+            Padding = new Padding(8, 0, 8, 0)
         };
+        panel.Paint += (_, e) =>
+        {
+            using var pen = new Pen(BorderColor);
+            e.Graphics.DrawLine(pen, 0, 0, panel.Width, 0);
+        };
+
+        // 右侧偏移编辑器
         var offsetHost = new PanelControl
         {
             Dock = DockStyle.Right,
-            Width = 142,
-            BorderStyle = BorderStyles.NoBorder
+            Width = 156,
+            BorderStyle = BorderStyles.NoBorder,
+            Appearance = { BackColor = Color.Transparent }
         };
-        var xLabel = new LabelControl { Text = "X", Location = new Point(2, 4) };
-        _xOffsetEdit.Location = new Point(17, 1);
-        var yLabel = new LabelControl { Text = "Y", Location = new Point(70, 4) };
-        _yOffsetEdit.Location = new Point(85, 1);
+        var xLabel = new LabelControl
+        {
+            Text = "X",
+            Location = new Point(4, 6),
+            Appearance = { ForeColor = Color.FromArgb(120, 120, 120), Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold) }
+        };
+        _xOffsetEdit.Location = new Point(22, 4);
+        _yOffsetEdit.Location = new Point(94, 4);
+        var yLabel = new LabelControl
+        {
+            Text = "Y",
+            Location = new Point(76, 6),
+            Appearance = { ForeColor = Color.FromArgb(120, 120, 120), Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold) }
+        };
         offsetHost.Controls.AddRange([xLabel, _xOffsetEdit, yLabel, _yOffsetEdit]);
 
         _archiveLabel.Dock = DockStyle.Left;
         _archiveLabel.Width = 360;
+        _archiveLabel.AutoSizeMode = LabelAutoSizeMode.None;
+        _archiveLabel.Appearance.TextOptions.VAlignment = VertAlignment.Center;
         _selectionLabel.Dock = DockStyle.Left;
-        _selectionLabel.Width = 84;
+        _selectionLabel.Width = 90;
+        _selectionLabel.AutoSizeMode = LabelAutoSizeMode.None;
+        _selectionLabel.Appearance.TextOptions.VAlignment = VertAlignment.Center;
         _statusLabel.Dock = DockStyle.Fill;
         _statusLabel.Appearance.TextOptions.HAlignment = HorzAlignment.Far;
+        _statusLabel.Appearance.TextOptions.VAlignment = VertAlignment.Center;
         _progressBar.Dock = DockStyle.Right;
 
         panel.Controls.Add(_statusLabel);

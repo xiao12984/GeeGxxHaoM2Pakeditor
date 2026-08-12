@@ -4,24 +4,48 @@ using GeePakEditor.Models;
 namespace GeePakEditor.Views;
 
 /// <summary>
-/// 使用固定单元格虚拟化显示 PAK 资源缩略图的滚动网格。
+/// 使用固定单元格虚拟化显示 PAK 资源缩略图的现代化滚动网格。
 /// </summary>
 internal sealed class ThumbnailGridControl : ScrollableControl
 {
     /// <summary>
-    /// 每个资源格的固定宽度，与原编辑器的缩略图布局保持接近。
+    /// 每个资源格的固定宽度。
     /// </summary>
-    private const int CellWidth = 101;
+    private const int CellWidth = 104;
 
     /// <summary>
     /// 每个资源格的固定高度，底部预留索引文本空间。
     /// </summary>
-    private const int CellHeight = 101;
+    private const int CellHeight = 108;
+
+    /// <summary>
+    /// 单元格之间的间距。
+    /// </summary>
+    private const int CellMargin = 4;
 
     /// <summary>
     /// 资源格内缩略图的边距。
     /// </summary>
     private const int ThumbnailPadding = 8;
+
+    /// <summary>
+    /// 单元格圆角半径。
+    /// </summary>
+    private const int CornerRadius = 6;
+
+    /// <summary>
+    /// 现代主题配色。
+    /// </summary>
+    private static readonly Color CellBackgroundColor = Color.FromArgb(248, 248, 248);
+    private static readonly Color SelectedCellColor = Color.FromArgb(0, 122, 204);
+    private static readonly Color SelectedCellLightColor = Color.FromArgb(227, 242, 253);
+    private static readonly Color SelectedBorderColor = Color.FromArgb(0, 105, 180);
+    private static readonly Color CellBorderColor = Color.FromArgb(224, 224, 224);
+    private static readonly Color HoverCellColor = Color.FromArgb(235, 245, 255);
+    private static readonly Color TextColor = Color.FromArgb(60, 60, 60);
+    private static readonly Color SelectedTextColor = Color.White;
+    private static readonly Color EmptyTextColor = Color.FromArgb(160, 160, 160);
+    private static readonly Color ShadowColor = Color.FromArgb(30, 0, 0, 0);
 
     /// <summary>
     /// 当前完整资源槽位集合，保留实际对象供控制器读取。
@@ -49,6 +73,11 @@ internal sealed class ThumbnailGridControl : ScrollableControl
     private int _selectedVisibleIndex = -1;
 
     /// <summary>
+    /// 当前鼠标悬停的资源位置，负数表示无悬停。
+    /// </summary>
+    private int _hoveredVisibleIndex = -1;
+
+    /// <summary>
     /// 当前按列排列的资源格数量。
     /// </summary>
     private int _columnCount = 1;
@@ -59,7 +88,7 @@ internal sealed class ThumbnailGridControl : ScrollableControl
     private string _filterText = string.Empty;
 
     /// <summary>
-    /// 初始化支持键盘导航、滚动和无闪烁绘制的资源网格。
+    /// 初始化支持键盘导航、滚动和无闪烁绘制的现代化资源网格。
     /// </summary>
     public ThumbnailGridControl()
     {
@@ -67,6 +96,7 @@ internal sealed class ThumbnailGridControl : ScrollableControl
         BackColor = Color.White;
         DoubleBuffered = true;
         TabStop = true;
+        Font = new Font("Microsoft YaHei UI", 8.5F);
     }
 
     /// <summary>
@@ -162,15 +192,19 @@ internal sealed class ThumbnailGridControl : ScrollableControl
     }
 
     /// <summary>
-    /// 绘制固定尺寸的资源单元格、缩略图、选中状态和五位索引。
+    /// 绘制圆角资源单元格、缩略图、选中状态、悬停效果和索引。
     /// </summary>
     /// <param name="e">控件绘制上下文。</param>
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
         e.Graphics.Clear(BackColor);
+        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+
         if (_visibleEntries.Count == 0)
         {
+            DrawEmptyState(e.Graphics);
             return;
         }
 
@@ -186,7 +220,7 @@ internal sealed class ThumbnailGridControl : ScrollableControl
     }
 
     /// <summary>
-    /// 根据鼠标位置更新当前选择。
+    /// 根据鼠标位置更新当前选择和悬停状态。
     /// </summary>
     /// <param name="e">鼠标参数。</param>
     protected override void OnMouseDown(MouseEventArgs e)
@@ -202,6 +236,44 @@ internal sealed class ThumbnailGridControl : ScrollableControl
         if (entryIndex >= 0)
         {
             SetSelectedVisibleIndex(entryIndex, true);
+        }
+    }
+
+    /// <summary>
+    /// 跟踪鼠标移动以更新悬停效果。
+    /// </summary>
+    /// <param name="e">鼠标参数。</param>
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        var entryIndex = HitTest(e.Location);
+        if (entryIndex != _hoveredVisibleIndex)
+        {
+            var previousHover = _hoveredVisibleIndex;
+            _hoveredVisibleIndex = entryIndex;
+            if (previousHover >= 0 && previousHover < _visibleEntries.Count)
+            {
+                Invalidate(GetCellRectangle(previousHover));
+            }
+            if (_hoveredVisibleIndex >= 0 && _hoveredVisibleIndex < _visibleEntries.Count)
+            {
+                Invalidate(GetCellRectangle(_hoveredVisibleIndex));
+            }
+        }
+    }
+
+    /// <summary>
+    /// 鼠标离开时清除悬停状态。
+    /// </summary>
+    /// <param name="e">事件参数。</param>
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        base.OnMouseLeave(e);
+        if (_hoveredVisibleIndex >= 0)
+        {
+            var previousHover = _hoveredVisibleIndex;
+            _hoveredVisibleIndex = -1;
+            Invalidate(GetCellRectangle(previousHover));
         }
     }
 
@@ -293,6 +365,7 @@ internal sealed class ThumbnailGridControl : ScrollableControl
         _selectedVisibleIndex = selectedIndex.HasValue
             ? _visibleEntries.FindIndex(entry => entry.Index == selectedIndex.Value)
             : -1;
+        _hoveredVisibleIndex = -1;
         UpdateLayoutMetrics();
         AutoScrollPosition = Point.Empty;
         Invalidate();
@@ -309,11 +382,11 @@ internal sealed class ThumbnailGridControl : ScrollableControl
     /// </summary>
     private void UpdateLayoutMetrics()
     {
-        _columnCount = Math.Max(1, ClientSize.Width / CellWidth);
+        _columnCount = Math.Max(1, ClientSize.Width / (CellWidth + CellMargin));
         var rowCount = (int)Math.Ceiling(_visibleEntries.Count / (double)_columnCount);
         AutoScrollMinSize = new Size(
-            Math.Max(ClientSize.Width, _columnCount * CellWidth),
-            Math.Max(ClientSize.Height, rowCount * CellHeight));
+            Math.Max(ClientSize.Width, _columnCount * (CellWidth + CellMargin)),
+            Math.Max(ClientSize.Height, rowCount * (CellHeight + CellMargin)));
     }
 
     /// <summary>
@@ -328,10 +401,10 @@ internal sealed class ThumbnailGridControl : ScrollableControl
         }
 
         var scrollY = -AutoScrollPosition.Y;
-        var firstRow = Math.Max(0, (scrollY / CellHeight) - 1);
+        var firstRow = Math.Max(0, (scrollY / (CellHeight + CellMargin)) - 1);
         var lastRow = Math.Min(
             (int)Math.Ceiling(_visibleEntries.Count / (double)_columnCount) - 1,
-            ((scrollY + ClientSize.Height) / CellHeight) + 1);
+            ((scrollY + ClientSize.Height) / (CellHeight + CellMargin)) + 1);
         return (
             firstRow * _columnCount,
             Math.Min(_visibleEntries.Count - 1, ((lastRow + 1) * _columnCount) - 1));
@@ -372,7 +445,7 @@ internal sealed class ThumbnailGridControl : ScrollableControl
     }
 
     /// <summary>
-    /// 绘制单个资源格及其缩略图和索引标签。
+    /// 绘制单个圆角资源格及其缩略图和索引标签。
     /// </summary>
     /// <param name="graphics">控件绘制上下文。</param>
     /// <param name="visibleIndex">资源在筛选集合中的位置。</param>
@@ -381,34 +454,147 @@ internal sealed class ThumbnailGridControl : ScrollableControl
     {
         var entry = _visibleEntries[visibleIndex];
         var selected = visibleIndex == _selectedVisibleIndex;
-        using var backgroundBrush = new SolidBrush(selected ? Color.FromArgb(0, 120, 215) : Color.White);
-        using var borderPen = new Pen(Color.FromArgb(205, 205, 205));
-        graphics.FillRectangle(backgroundBrush, cellBounds);
-        graphics.DrawRectangle(borderPen, cellBounds.Left, cellBounds.Top, cellBounds.Width - 1, cellBounds.Height - 1);
+        var hovered = visibleIndex == _hoveredVisibleIndex && !selected;
 
-        var thumbnailBounds = new Rectangle(
-            cellBounds.Left + ThumbnailPadding,
-            cellBounds.Top + ThumbnailPadding,
-            cellBounds.Width - (ThumbnailPadding * 2),
-            cellBounds.Height - 30);
-        // 缩略图网格使用纯白底，与大预览区的透明棋盘格视觉区分。
-        using var thumbnailBackgroundBrush = new SolidBrush(Color.White);
-        graphics.FillRectangle(thumbnailBackgroundBrush, thumbnailBounds);
+        // 定义绘制区域（减去间距）
+        var drawBounds = new Rectangle(
+            cellBounds.Left + CellMargin / 2,
+            cellBounds.Top + CellMargin / 2,
+            cellBounds.Width - CellMargin,
+            cellBounds.Height - CellMargin);
+
+        using var path = GetRoundedRectangle(drawBounds, CornerRadius);
+
+        // 绘制阴影（仅选中时）
+        if (selected)
+        {
+            using var shadowBrush = new SolidBrush(ShadowColor);
+            var shadowBounds = new Rectangle(drawBounds.X + 1, drawBounds.Y + 2, drawBounds.Width, drawBounds.Height);
+            using var shadowPath = GetRoundedRectangle(shadowBounds, CornerRadius);
+            graphics.FillPath(shadowBrush, shadowPath);
+        }
+
+        // 绘制单元格背景
+        var bgColor = selected ? SelectedCellColor : (hovered ? HoverCellColor : CellBackgroundColor);
+        using var bgBrush = new SolidBrush(bgColor);
+        graphics.FillPath(bgBrush, path);
+
+        // 绘制单元格边框
+        var borderColor = selected ? SelectedBorderColor : CellBorderColor;
+        using var borderPen = new Pen(borderColor, selected ? 1.5F : 1F);
+        graphics.DrawPath(borderPen, path);
+
+        // 绘制缩略图区域
+        var thumbnailArea = new Rectangle(
+            drawBounds.Left + ThumbnailPadding,
+            drawBounds.Top + ThumbnailPadding,
+            drawBounds.Width - (ThumbnailPadding * 2),
+            drawBounds.Height - 32);
+
+        // 缩略图背景
+        using var thumbBgBrush = new SolidBrush(Color.White);
+        using var thumbPath = GetRoundedRectangle(thumbnailArea, 3);
+        graphics.FillPath(thumbBgBrush, thumbPath);
+
         if (_thumbnailCache.TryGetValue(entry.Index, out var thumbnail))
         {
             graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
             graphics.PixelOffsetMode = PixelOffsetMode.Half;
-            graphics.DrawImage(thumbnail, GetImageBounds(thumbnail.Size, thumbnailBounds));
+            var imageBounds = GetImageBounds(thumbnail.Size, thumbnailArea);
+            // 裁剪到缩略图区域
+            var originalClip = graphics.Clip;
+            graphics.SetClip(thumbPath);
+            graphics.DrawImage(thumbnail, imageBounds);
+            graphics.Clip = originalClip;
+        }
+        else if (!entry.IsEmpty)
+        {
+            // 显示加载中的占位符
+            using var loadingFont = new Font("Microsoft YaHei UI", 7F);
+            var loadingText = "...";
+            var loadingSize = TextRenderer.MeasureText(graphics, loadingText, loadingFont);
+            TextRenderer.DrawText(
+                graphics,
+                loadingText,
+                loadingFont,
+                new Point(
+                    thumbnailArea.Left + (thumbnailArea.Width - loadingSize.Width) / 2,
+                    thumbnailArea.Top + (thumbnailArea.Height - loadingSize.Height) / 2),
+                EmptyTextColor);
         }
 
-        var textBounds = new Rectangle(cellBounds.Left + 2, cellBounds.Bottom - 20, cellBounds.Width - 4, 18);
+        // 绘制索引标签
+        var textBounds = new Rectangle(
+            drawBounds.Left + 4,
+            drawBounds.Bottom - 22,
+            drawBounds.Width - 8,
+            20);
+        var textColor = selected ? SelectedTextColor : TextColor;
         TextRenderer.DrawText(
             graphics,
             entry.Index.ToString("D5"),
             Font,
             textBounds,
-            selected ? Color.White : Color.FromArgb(45, 45, 45),
-            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+            textColor,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+
+        // 绘制格式标签
+        if (!entry.IsEmpty)
+        {
+            var formatText = entry.FormatText;
+            var formatSize = TextRenderer.MeasureText(graphics, formatText, new Font("Microsoft YaHei UI", 6.5F));
+            var formatBounds = new Rectangle(
+                drawBounds.Left + 4,
+                drawBounds.Top + 4,
+                formatSize.Width + 6,
+                formatSize.Height + 2);
+            using var formatPath = GetRoundedRectangle(formatBounds, 2);
+            using var formatBg = new SolidBrush(selected
+                ? Color.FromArgb(80, 255, 255, 255)
+                : Color.FromArgb(180, 240, 240, 240));
+            graphics.FillPath(formatBg, formatPath);
+            TextRenderer.DrawText(
+                graphics,
+                formatText,
+                new Font("Microsoft YaHei UI", 6.5F),
+                formatBounds,
+                selected ? Color.FromArgb(220, 255, 255, 255) : Color.FromArgb(100, 100, 100),
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+        }
+    }
+
+    /// <summary>
+    /// 绘制空状态提示。
+    /// </summary>
+    /// <param name="graphics">控件绘制上下文。</param>
+    private void DrawEmptyState(Graphics graphics)
+    {
+        if (_allEntries.Count == 0)
+        {
+            var message = "打开 PAK 或 WZL 归档以浏览资源";
+            var messageSize = TextRenderer.MeasureText(graphics, message, Font);
+            TextRenderer.DrawText(
+                graphics,
+                message,
+                Font,
+                new Point(
+                    (ClientSize.Width - messageSize.Width) / 2,
+                    (ClientSize.Height - messageSize.Height) / 2),
+                EmptyTextColor);
+        }
+        else
+        {
+            var message = "没有匹配的资源";
+            var messageSize = TextRenderer.MeasureText(graphics, message, Font);
+            TextRenderer.DrawText(
+                graphics,
+                message,
+                Font,
+                new Point(
+                    (ClientSize.Width - messageSize.Width) / 2,
+                    (ClientSize.Height - messageSize.Height) / 2),
+                EmptyTextColor);
+        }
     }
 
     /// <summary>
@@ -421,8 +607,8 @@ internal sealed class ThumbnailGridControl : ScrollableControl
         var virtualLocation = new Point(
             clientLocation.X - AutoScrollPosition.X,
             clientLocation.Y - AutoScrollPosition.Y);
-        var column = virtualLocation.X / CellWidth;
-        var row = virtualLocation.Y / CellHeight;
+        var column = virtualLocation.X / (CellWidth + CellMargin);
+        var row = virtualLocation.Y / (CellHeight + CellMargin);
         if (column < 0 || column >= _columnCount || row < 0)
         {
             return -1;
@@ -491,7 +677,11 @@ internal sealed class ThumbnailGridControl : ScrollableControl
     {
         var row = visibleIndex / _columnCount;
         var column = visibleIndex % _columnCount;
-        return new Rectangle(column * CellWidth, row * CellHeight, CellWidth, CellHeight);
+        return new Rectangle(
+            column * (CellWidth + CellMargin),
+            row * (CellHeight + CellMargin),
+            CellWidth + CellMargin,
+            CellHeight + CellMargin);
     }
 
     /// <summary>
@@ -513,6 +703,34 @@ internal sealed class ThumbnailGridControl : ScrollableControl
             bounds.Top + ((bounds.Height - height) / 2),
             width,
             height);
+    }
+
+    /// <summary>
+    /// 创建圆角矩形路径。
+    /// </summary>
+    /// <param name="rectangle">矩形区域。</param>
+    /// <param name="radius">圆角半径。</param>
+    /// <returns>GraphicsPath 对象。</returns>
+    private static GraphicsPath GetRoundedRectangle(Rectangle rectangle, int radius)
+    {
+        var path = new GraphicsPath();
+        var diameter = radius * 2;
+        var arc = new Rectangle(rectangle.X, rectangle.Y, diameter, diameter);
+
+        // 左上角
+        path.AddArc(arc, 180, 90);
+        // 右上角
+        arc.X = rectangle.Right - diameter;
+        path.AddArc(arc, 270, 90);
+        // 右下角
+        arc.Y = rectangle.Bottom - diameter;
+        path.AddArc(arc, 0, 90);
+        // 左下角
+        arc.X = rectangle.X;
+        path.AddArc(arc, 90, 90);
+
+        path.CloseFigure();
+        return path;
     }
 
     /// <summary>

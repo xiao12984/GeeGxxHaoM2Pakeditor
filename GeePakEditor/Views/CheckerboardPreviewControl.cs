@@ -1,19 +1,19 @@
 namespace GeePakEditor.Views;
 
 /// <summary>
-/// 在透明棋盘格背景上按原始像素尺寸显示当前选中图片的预览控件。
+/// 在透明棋盘格背景上按原始像素尺寸显示当前选中图片的现代化预览控件。
 /// </summary>
 internal sealed class CheckerboardPreviewControl : ScrollableControl
 {
     /// <summary>
-    /// 透明背景中浅色格的颜色。
+    /// 透明背景中浅色格的颜色（柔化版）。
     /// </summary>
-    private static readonly Color LightSquareColor = Color.FromArgb(245, 245, 245);
+    private static readonly Color LightSquareColor = Color.FromArgb(248, 248, 248);
 
     /// <summary>
-    /// 透明背景中深色格的颜色。
+    /// 透明背景中深色格的颜色（柔化版）。
     /// </summary>
-    private static readonly Color DarkSquareColor = Color.FromArgb(190, 190, 190);
+    private static readonly Color DarkSquareColor = Color.FromArgb(225, 225, 225);
 
     /// <summary>
     /// 当前由主窗口托管和释放的预览图片。
@@ -89,7 +89,7 @@ internal sealed class CheckerboardPreviewControl : ScrollableControl
     }
 
     /// <summary>
-    /// 先绘制棋盘格，再以 1:1 原始像素尺寸居中显示资源。
+    /// 先绘制柔化棋盘格，再以 1:1 原始像素尺寸居中显示资源。
     /// </summary>
     /// <param name="e">控件绘制上下文。</param>
     protected override void OnPaint(PaintEventArgs e)
@@ -157,7 +157,7 @@ internal sealed class CheckerboardPreviewControl : ScrollableControl
     }
 
     /// <summary>
-    /// 绘制与原资源编辑器一致的灰白透明棋盘格。
+    /// 绘制柔化的灰白透明棋盘格，与原资源编辑器视觉风格一致但更柔和。
     /// </summary>
     /// <param name="graphics">控件绘制上下文。</param>
     /// <param name="bounds">需要填充的区域。</param>
