@@ -1,3 +1,5 @@
+using System.Drawing;
+using System.Drawing.Drawing2D;
 using GeePakEditor.Models;
 using GeePakEditor.Services;
 using GeePakEditor.Views;
@@ -23,7 +25,8 @@ public sealed class MainController
         _view = view;
         _archiveService = archiveService;
         _passwordService = passwordService;
-        _view.OpenRequested += (_, _) => Execute(OpenArchive);
+        _view.OpenRequested += (_, _) => Execute(() => OpenArchive());
+        _view.ArchivePathOpenRequested += (_, arguments) => Execute(() => OpenArchive(arguments.FilePath));
         _view.SaveRequested += (_, _) => Execute(SaveArchive);
         _view.SaveAsRequested += (_, _) => Execute(SaveArchiveAs);
         _view.AddRequested += (_, _) => Execute(AddImages);
@@ -32,21 +35,25 @@ public sealed class MainController
         _view.DeleteRequested += (_, _) => Execute(DeleteImage);
         _view.SelectionChanged += (_, _) => Execute(RefreshSelection);
         _view.MetadataChanged += (_, _) => MarkMetadataChanged();
+        _view.ThumbnailsRequested += (_, arguments) => Execute(() => LoadThumbnails(arguments.Entries));
         _view.ClosingRequested += (_, arguments) => ConfirmClosing(arguments);
         _view.UpdateCommandState(false, false);
     }
 
     /// <summary>
-    /// 选择 PAK 后始终显示密码输入框，FilePassword.txt 中的记录仅用于预填。
+    /// 从文件对话框或目录树指定的路径打开归档，并统一执行密码确认流程。
     /// </summary>
-    private void OpenArchive()
+    /// <param name="requestedPath">目录树指定的归档路径；为空时显示打开文件对话框。</param>
+    private void OpenArchive(string? requestedPath = null)
     {
         if (_isDirty && !_view.ConfirmDiscardChanges())
         {
             return;
         }
 
-        var filePath = _view.SelectArchiveToOpen();
+        var filePath = string.IsNullOrWhiteSpace(requestedPath)
+            ? _view.SelectArchiveToOpen()
+            : requestedPath;
         if (string.IsNullOrWhiteSpace(filePath))
         {
             return;
@@ -225,6 +232,53 @@ public sealed class MainController
         _isDirty = true;
         _view.RefreshEntries(_archive, entry.Index);
         _view.SetStatus($"索引 {entry.Index} 的偏移已修改，尚未保存");
+    }
+
+    /// <summary>
+    /// 按缩略图网格请求解码当前可见资源，并交由视图缓存缩放后的副本。
+    /// </summary>
+    /// <param name="entries">需要生成缩略图的非空资源槽位。</param>
+    private void LoadThumbnails(IReadOnlyList<PakEntry> entries)
+    {
+        if (_archive is null || entries.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var entry in entries.Where(entry => !entry.IsEmpty).GroupBy(entry => entry.Index).Select(group => group.First()))
+        {
+            using var image = _archiveService.DecodeImage(entry);
+            var thumbnail = CreateThumbnail(image);
+            try
+            {
+                _view.ShowThumbnail(entry.Index, thumbnail);
+            }
+            catch
+            {
+                thumbnail.Dispose();
+                throw;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 生成不超过 76 像素的独立透明缩略图，避免视图缓存完整资源位图。
+    /// </summary>
+    /// <param name="image">归档服务解码得到的原始图片。</param>
+    /// <returns>由调用方交付给视图并由视图释放的缩略图。</returns>
+    private static Image CreateThumbnail(Image image)
+    {
+        const int maximumSize = 76;
+        var scale = Math.Min(maximumSize / (float)image.Width, maximumSize / (float)image.Height);
+        var width = Math.Max(1, (int)Math.Round(image.Width * scale));
+        var height = Math.Max(1, (int)Math.Round(image.Height * scale));
+        var thumbnail = new Bitmap(width, height);
+        using var graphics = Graphics.FromImage(thumbnail);
+        graphics.Clear(Color.Transparent);
+        graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
+        graphics.PixelOffsetMode = PixelOffsetMode.Half;
+        graphics.DrawImage(image, new Rectangle(0, 0, width, height));
+        return thumbnail;
     }
 
     /// <summary>

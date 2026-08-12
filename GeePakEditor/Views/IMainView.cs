@@ -11,6 +11,9 @@ public interface IMainView
     /// <summary>用户请求打开归档。</summary>
     event EventHandler? OpenRequested;
 
+    /// <summary>用户从目录树指定归档文件请求打开。</summary>
+    event EventHandler<ArchivePathRequestedEventArgs>? ArchivePathOpenRequested;
+
     /// <summary>用户请求保存当前归档。</summary>
     event EventHandler? SaveRequested;
 
@@ -34,6 +37,9 @@ public interface IMainView
 
     /// <summary>当前图片的 X/Y 元数据已修改。</summary>
     event EventHandler? MetadataChanged;
+
+    /// <summary>缩略图网格请求加载当前可见资源的缩略图。</summary>
+    event EventHandler<ThumbnailRequestEventArgs>? ThumbnailsRequested;
 
     /// <summary>主窗口即将关闭。</summary>
     event EventHandler<FormClosingEventArgs>? ClosingRequested;
@@ -73,6 +79,9 @@ public interface IMainView
 
     /// <summary>更新图片预览；窗口负责释放旧图片。</summary>
     void ShowPreview(Image? image);
+
+    /// <summary>向缩略图网格交付单个图片；窗口接管该图片的释放责任。</summary>
+    void ShowThumbnail(int index, Image thumbnail);
 
     /// <summary>设置忙碌状态与底部状态文本。</summary>
     void SetBusy(bool busy, string statusText);
