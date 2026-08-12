@@ -599,7 +599,7 @@ public sealed class MainForm : XtraForm, IMainView
         using var bodyBrush = new SolidBrush(Color.FromArgb(245, 247, 250));
         using var borderPen = new Pen(Color.FromArgb(108, 124, 140));
         using var titleBrush = new SolidBrush(Color.FromArgb(120, 136, 152));
-        using var labelBrush = new SolidBrush(Color.FromArgb(77, 109, 147));
+        using var labelPen = new Pen(Color.FromArgb(77, 109, 147));
 
         var bounds = new Rectangle(4, 2, 10, 14);
         graphics.FillRectangle(bodyBrush, bounds);
@@ -607,8 +607,8 @@ public sealed class MainForm : XtraForm, IMainView
         graphics.FillRectangle(titleBrush, 4, 2, 10, 3);
         graphics.DrawLine(borderPen, 7, 6, 11, 6);
         graphics.DrawLine(borderPen, 7, 8, 11, 8);
-        graphics.DrawLine(labelBrush, 7, 11, 10, 11);
-        graphics.DrawLine(labelBrush, 7, 13, 11, 13);
+        graphics.DrawLine(labelPen, 7, 11, 10, 11);
+        graphics.DrawLine(labelPen, 7, 13, 11, 13);
         return bitmap;
     }
 
