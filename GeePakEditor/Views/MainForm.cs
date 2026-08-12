@@ -125,13 +125,13 @@ public sealed class MainForm : XtraForm, IMainView
         KeyPreview = true;
         Appearance.BackColor = PanelBackgroundColor;
 
-        _openButton = CreateCommandButton("打开", "Open;Size32x32");
-        _saveButton = CreateCommandButton("保存", "Save;Size32x32");
-        _saveAsButton = CreateCommandButton("另存为", "SaveAs;Size32x32");
-        _addButton = CreateCommandButton("导入", "AddItem;Size32x32");
-        _replaceButton = CreateCommandButton("替换", "Replace;Size32x32");
-        _exportButton = CreateCommandButton("导出", "ExportFile;Size32x32");
-        _deleteButton = CreateCommandButton("删除", "Delete;Size32x32");
+        _openButton = CreateCommandButton("打开", "Open;Size16x16");
+        _saveButton = CreateCommandButton("保存", "Save;Size16x16");
+        _saveAsButton = CreateCommandButton("另存为", "SaveAs;Size16x16");
+        _addButton = CreateCommandButton("导入", "AddItem;Size16x16");
+        _replaceButton = CreateCommandButton("替换", "Replace;Size16x16");
+        _exportButton = CreateCommandButton("导出", "ExportFile;Size16x16");
+        _deleteButton = CreateCommandButton("删除", "Delete;Size16x16");
 
         _directoryTreeImages = CreateDirectoryTreeImages();
         _directoryTree = CreateDirectoryTree(_directoryTreeImages);
@@ -473,7 +473,8 @@ public sealed class MainForm : XtraForm, IMainView
         };
         button.ImageOptions.ImageUri.Uri = imageUri;
         button.ImageOptions.Location = ImageLocation.TopCenter;
-        button.ImageOptions.SvgImageSize = new Size(20, 20);
+        // 采用 16px 图标，给中文标题留出更完整的显示空间。
+        button.ImageOptions.SvgImageSize = new Size(16, 16);
         // 禁用时保留原始 SVG 颜色，避免灰置后图标与底色混在一起。
         button.ImageOptions.SvgImageColorizationMode = SvgImageColorizationMode.None;
         return button;
