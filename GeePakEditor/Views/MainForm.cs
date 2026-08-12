@@ -49,6 +49,11 @@ public sealed class MainForm : XtraForm, IMainView
     private const string ArchiveNodeImageKey = "archive";
 
     /// <summary>
+    /// 左侧目录树的可执行文件图标键。
+    /// </summary>
+    private const string ExeNodeImageKey = "exe";
+
+    /// <summary>
     /// 现代主题配色常量。
     /// </summary>
     private static readonly Color AccentColor = Color.FromArgb(0, 122, 204);
@@ -497,6 +502,7 @@ public sealed class MainForm : XtraForm, IMainView
         images.Images.Add(DriveNodeImageKey, CreateDriveIcon());
         images.Images.Add(FolderNodeImageKey, CreateFolderIcon(Color.FromArgb(246, 198, 60)));
         images.Images.Add(ArchiveNodeImageKey, CreateArchiveIcon());
+        images.Images.Add(ExeNodeImageKey, CreateExeIcon());
         return images;
     }
 
@@ -578,6 +584,31 @@ public sealed class MainForm : XtraForm, IMainView
         graphics.DrawLine(borderPen, 10, 2, 14, 6);
         graphics.DrawLine(accentPen, 7, 10, 12, 10);
         graphics.DrawLine(accentPen, 7, 12, 12, 12);
+        return bitmap;
+    }
+
+    /// <summary>
+    /// 绘制可执行文件节点图标。
+    /// </summary>
+    /// <returns>目录树可直接使用的位图图标。</returns>
+    private static Bitmap CreateExeIcon()
+    {
+        var bitmap = CreateTreeIconCanvas();
+        using var graphics = Graphics.FromImage(bitmap);
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        using var bodyBrush = new SolidBrush(Color.FromArgb(245, 247, 250));
+        using var borderPen = new Pen(Color.FromArgb(108, 124, 140));
+        using var titleBrush = new SolidBrush(Color.FromArgb(120, 136, 152));
+        using var labelBrush = new SolidBrush(Color.FromArgb(77, 109, 147));
+
+        var bounds = new Rectangle(4, 2, 10, 14);
+        graphics.FillRectangle(bodyBrush, bounds);
+        graphics.DrawRectangle(borderPen, bounds);
+        graphics.FillRectangle(titleBrush, 4, 2, 10, 3);
+        graphics.DrawLine(borderPen, 7, 6, 11, 6);
+        graphics.DrawLine(borderPen, 7, 8, 11, 8);
+        graphics.DrawLine(labelBrush, 7, 11, 10, 11);
+        graphics.DrawLine(labelBrush, 7, 13, 11, 13);
         return bitmap;
     }
 
@@ -939,6 +970,18 @@ public sealed class MainForm : XtraForm, IMainView
                     SelectedImageKey = ArchiveNodeImageKey
                 });
             }
+
+            foreach (var executablePath in Directory.EnumerateFiles(directoryPath)
+                         .Where(IsExecutableFile)
+                         .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
+            {
+                parentNode.Nodes.Add(new TreeNode(Path.GetFileName(executablePath))
+                {
+                    Tag = executablePath,
+                    ImageKey = ExeNodeImageKey,
+                    SelectedImageKey = ExeNodeImageKey
+                });
+            }
         }
         catch (UnauthorizedAccessException)
         {
@@ -997,6 +1040,16 @@ public sealed class MainForm : XtraForm, IMainView
         var extension = Path.GetExtension(filePath);
         return string.Equals(extension, ".pak", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(extension, ".wzl", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 判断文件是否为可执行程序，便于在目录树中展示程序图标。
+    /// </summary>
+    /// <param name="filePath">待判断的文件路径。</param>
+    /// <returns>文件扩展名为 EXE 时返回 true。</returns>
+    private static bool IsExecutableFile(string filePath)
+    {
+        return string.Equals(Path.GetExtension(filePath), ".exe", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
