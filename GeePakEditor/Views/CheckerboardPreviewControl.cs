@@ -3,7 +3,7 @@ namespace GeePakEditor.Views;
 /// <summary>
 /// 在透明棋盘格背景上按原始像素尺寸显示当前选中图片的预览控件。
 /// </summary>
-internal sealed class CheckerboardPreviewControl : Control
+internal sealed class CheckerboardPreviewControl : ScrollableControl
 {
     /// <summary>
     /// 透明背景中浅色格的颜色。
@@ -33,6 +33,9 @@ internal sealed class CheckerboardPreviewControl : Control
             | ControlStyles.ResizeRedraw
             | ControlStyles.Opaque,
             true);
+        // 图片超过可视范围时由 WinForms 自动显示滚动条，保持预览资源的原始像素尺寸。
+        AutoScroll = true;
+        AutoScrollMargin = Size.Empty;
         DoubleBuffered = true;
         BackColor = Color.White;
         TabStop = false;
@@ -47,6 +50,7 @@ internal sealed class CheckerboardPreviewControl : Control
         set
         {
             _image = value;
+            UpdateScrollMetrics(resetScrollPosition: true);
             // 图片切换时请求整个预览区域重绘，确保旧图片占用的区域被棋盘格覆盖。
             Invalidate(ClientRectangle);
         }
@@ -68,7 +72,19 @@ internal sealed class CheckerboardPreviewControl : Control
     protected override void OnResize(EventArgs e)
     {
         base.OnResize(e);
+        UpdateScrollMetrics(resetScrollPosition: false);
         // 尺寸变化会改变图片居中坐标，必须使整个区域失效而非只刷新局部。
+        Invalidate(ClientRectangle);
+    }
+
+    /// <summary>
+    /// 滚动条位置变化后重绘预览，确保图片按新的视口偏移显示。
+    /// </summary>
+    /// <param name="se">滚动参数。</param>
+    protected override void OnScroll(ScrollEventArgs se)
+    {
+        base.OnScroll(se);
+        // 预览采用自定义绘制，需要主动刷新整个客户区以应用最新滚动偏移。
         Invalidate(ClientRectangle);
     }
 
@@ -85,11 +101,59 @@ internal sealed class CheckerboardPreviewControl : Control
             return;
         }
 
-        var location = new Point(
-            (ClientSize.Width - _image.Width) / 2,
-            (ClientSize.Height - _image.Height) / 2);
-        // DrawImageUnscaled 保持资源的实际像素尺寸；超出预览区域时由控件裁切。
-        e.Graphics.DrawImageUnscaled(_image, location);
+        var graphicsState = e.Graphics.Save();
+        try
+        {
+            // AutoScrollPosition 为负值，将虚拟图片画布平移到当前滚动视口。
+            e.Graphics.TranslateTransform(AutoScrollPosition.X, AutoScrollPosition.Y);
+            // DrawImageUnscaled 保持资源的实际像素尺寸；超出预览区域时可通过滚动条查看。
+            e.Graphics.DrawImageUnscaled(_image, GetImageLocation());
+        }
+        finally
+        {
+            e.Graphics.Restore(graphicsState);
+        }
+    }
+
+    /// <summary>
+    /// 根据当前图片尺寸更新预览画布范围，并在切换图片时回到左上角。
+    /// </summary>
+    /// <param name="resetScrollPosition">是否将滚动位置重置为左上角。</param>
+    private void UpdateScrollMetrics(bool resetScrollPosition)
+    {
+        var minimumSize = _image is null ? Size.Empty : _image.Size;
+        if (AutoScrollMinSize != minimumSize)
+        {
+            // 虚拟画布与原图同尺寸，只有图片超出客户区时才会显示对应方向的滚动条。
+            AutoScrollMinSize = minimumSize;
+        }
+
+        if (resetScrollPosition)
+        {
+            // 切换资源后默认从左上角查看，避免沿用上一张大图的滚动位置。
+            AutoScrollPosition = Point.Empty;
+        }
+    }
+
+    /// <summary>
+    /// 获取图片在虚拟画布中的原始像素绘制位置。
+    /// </summary>
+    /// <returns>原图的绘制起点。</returns>
+    private Point GetImageLocation()
+    {
+        if (_image is null)
+        {
+            return Point.Empty;
+        }
+
+        // 仅在该方向无需滚动时居中，超出视口的方向从画布原点开始绘制。
+        var horizontalPosition = _image.Width <= ClientSize.Width
+            ? (ClientSize.Width - _image.Width) / 2
+            : 0;
+        var verticalPosition = _image.Height <= ClientSize.Height
+            ? (ClientSize.Height - _image.Height) / 2
+            : 0;
+        return new Point(horizontalPosition, verticalPosition);
     }
 
     /// <summary>
