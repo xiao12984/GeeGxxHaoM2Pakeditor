@@ -387,8 +387,8 @@ public sealed class MainForm : XtraForm, IMainView
         var button = new SimpleButton
         {
             Text = text,
-            Size = new Size(68, 58),
-            MinimumSize = new Size(68, 58),
+            Size = new Size(72, 68),
+            MinimumSize = new Size(72, 68),
             ToolTip = text
         };
         button.ImageOptions.ImageUri.Uri = imageUri;
@@ -479,7 +479,7 @@ public sealed class MainForm : XtraForm, IMainView
         var toolbar = new PanelControl
         {
             Dock = DockStyle.Top,
-            Height = 64,
+            Height = 76,
             BorderStyle = BorderStyles.NoBorder
         };
         var commands = new FlowLayoutPanel
@@ -487,7 +487,7 @@ public sealed class MainForm : XtraForm, IMainView
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = false,
-            Padding = new Padding(8, 3, 0, 3)
+            Padding = new Padding(8, 4, 0, 4)
         };
         commands.Controls.AddRange(
         [
@@ -504,7 +504,7 @@ public sealed class MainForm : XtraForm, IMainView
             Dock = DockStyle.Right,
             Width = 240,
             BorderStyle = BorderStyles.NoBorder,
-            Padding = new Padding(8, 18, 8, 14)
+            Padding = new Padding(8, 24, 8, 20)
         };
         _filterEdit.Dock = DockStyle.Fill;
         filterHost.Controls.Add(_filterEdit);
