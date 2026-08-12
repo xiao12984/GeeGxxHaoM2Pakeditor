@@ -4,6 +4,7 @@ using System.IO.Compression;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using GeePakEditor.Models;
 
 namespace GeePakEditor.Services;
@@ -382,6 +383,7 @@ internal sealed class PakBridgeKeyDerivationService : IDisposable
     private sealed class PakBridgePasswordRequest
     {
         /// <summary>待派生的原始密码。</summary>
+        [JsonPropertyName("password")]
         public string Password { get; init; } = string.Empty;
     }
 
