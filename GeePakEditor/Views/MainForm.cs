@@ -398,9 +398,9 @@ public sealed class MainForm : XtraForm, IMainView
     }
 
     /// <summary>
-    /// 创建顶部品牌栏，包含应用图标、标题和版本信息。
+    /// 创建顶部命令栏容器，移除品牌说明后让工具按钮从左侧开始排列。
     /// </summary>
-    /// <returns>品牌栏面板。</returns>
+    /// <returns>顶部命令栏面板。</returns>
     private Control CreateHeaderPanel()
     {
         var header = new PanelControl
@@ -415,47 +415,8 @@ public sealed class MainForm : XtraForm, IMainView
             e.Graphics.DrawLine(pen, 0, header.Height - 1, header.Width, header.Height - 1);
         };
 
-        var headerLayout = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 2,
-            RowCount = 1,
-            Margin = Padding.Empty,
-            Padding = Padding.Empty
-        };
-        // 左侧品牌区保持固定宽度，命令区自动占用剩余空间并随窗口缩放。
-        headerLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 320F));
-        headerLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-
-        var titleHost = new PanelControl
-        {
-            Dock = DockStyle.Fill,
-            BorderStyle = BorderStyles.NoBorder,
-            Appearance = { BackColor = Color.White }
-        };
-        var titleLabel = new LabelControl
-        {
-            Text = "GEE PAK 资源编辑器",
-            Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Bold),
-            Location = new Point(16, 10),
-            AutoSizeMode = LabelAutoSizeMode.None,
-            Size = new Size(300, 28),
-            Appearance = { ForeColor = Color.FromArgb(30, 30, 30) }
-        };
-        var subtitleLabel = new LabelControl
-        {
-            Text = "Wil · Wis · Wzl · Pak 格式支持",
-            Font = new Font("Microsoft YaHei UI", 8F),
-            Location = new Point(16, 38),
-            AutoSizeMode = LabelAutoSizeMode.None,
-            Size = new Size(300, 18),
-            Appearance = { ForeColor = Color.FromArgb(150, 150, 150) }
-        };
-        titleHost.Controls.Add(titleLabel);
-        titleHost.Controls.Add(subtitleLabel);
-        headerLayout.Controls.Add(titleHost, 0, 0);
-        headerLayout.Controls.Add(CreateToolbar(), 1, 0);
-        header.Controls.Add(headerLayout);
+        // 顶部区域仅承载命令栏，避免品牌说明占据左侧固定宽度。
+        header.Controls.Add(CreateToolbar());
         return header;
     }
 
@@ -609,8 +570,7 @@ public sealed class MainForm : XtraForm, IMainView
             Padding = new Padding(0, 8, 8, 8)
         };
 
-        // 添加按钮组 1：文件操作
-        buttonFlow.Controls.Add(CreateToolbarSeparator());
+        // 第一个按钮组从左侧直接开始，移除品牌区后不再保留额外占位。
         buttonFlow.Controls.Add(_openButton);
         buttonFlow.Controls.Add(_saveButton);
         buttonFlow.Controls.Add(_saveAsButton);
