@@ -502,7 +502,8 @@ internal sealed class ThumbnailGridControl : ScrollableControl
     {
         var horizontalScale = bounds.Width / (float)imageSize.Width;
         var verticalScale = bounds.Height / (float)imageSize.Height;
-        var scale = Math.Min(horizontalScale, verticalScale);
+        // 网格仅负责居中和缩小，避免将缓存中的小尺寸缩略图再次放大。
+        var scale = Math.Min(1F, Math.Min(horizontalScale, verticalScale));
         var width = Math.Max(1, (int)Math.Round(imageSize.Width * scale));
         var height = Math.Max(1, (int)Math.Round(imageSize.Height * scale));
         return new Rectangle(
