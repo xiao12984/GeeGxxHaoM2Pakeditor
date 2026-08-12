@@ -607,14 +607,15 @@ public sealed class MainForm : XtraForm, IMainView
     /// <param name="e">即将展开的目录树节点。</param>
     private void OnDirectoryTreeBeforeExpand(object? sender, TreeViewCancelEventArgs e)
     {
-        if (e.Node.Tag is not string directoryPath || !Directory.Exists(directoryPath))
+        var node = e.Node;
+        if (node is null || node.Tag is not string directoryPath || !Directory.Exists(directoryPath))
         {
             return;
         }
 
-        if (e.Node.Nodes.Count == 1 && e.Node.Nodes[0].Tag is null)
+        if (node.Nodes.Count == 1 && node.Nodes[0].Tag is null)
         {
-            PopulateDirectoryNode(e.Node, directoryPath);
+            PopulateDirectoryNode(node, directoryPath);
         }
     }
 
@@ -643,7 +644,7 @@ public sealed class MainForm : XtraForm, IMainView
         parentNode.Nodes.Clear();
         try
         {
-            foreach (var childDirectory in Directory.EnumerateDirectories(directoryPath).OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
+            foreach (var childDirectory in Directory.EnumerateDirectories(directoryPath).OrderBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase))
             {
                 AddDirectoryNode(parentNode.Nodes, Path.GetFileName(childDirectory), childDirectory);
             }
