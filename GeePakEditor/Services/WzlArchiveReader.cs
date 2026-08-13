@@ -80,17 +80,20 @@ internal sealed class WzlArchiveReader
 
         var headerSlotCount = PakBinary.ReadUInt32(data, GeePakConstants.WzxHeaderSize - sizeof(uint));
         var tableSlotCount = checked((data.Length - GeePakConstants.WzxHeaderSize) / sizeof(uint));
-        if (headerSlotCount != checked((uint)tableSlotCount))
+        if (headerSlotCount > checked((uint)tableSlotCount))
         {
-            throw new PakFormatException($"WZX 索引数量不一致：头部={headerSlotCount}, 表={tableSlotCount}。");
+            throw new PakFormatException($"WZX 偏移表不完整：头部声明={headerSlotCount}, 表={tableSlotCount}。");
         }
 
-        if (tableSlotCount > GeePakConstants.MaximumSlotCount)
+        if (headerSlotCount > GeePakConstants.MaximumSlotCount)
         {
             throw new PakFormatException($"WZX 槽位数量超过上限 {GeePakConstants.MaximumSlotCount:N0}。");
         }
 
-        var offsets = new uint[tableSlotCount];
+        // xiami 的 M2Zip Reader 以头部 IndexCount 为准读取前 N 个偏移；
+        // 部分客户端 WZX 尾部会附带额外 UInt32 表项，不能因此阻断正常打开。
+        var slotCount = checked((int)headerSlotCount);
+        var offsets = new uint[slotCount];
         for (var index = 0; index < offsets.Length; index++)
         {
             offsets[index] = PakBinary.ReadUInt32(data, GeePakConstants.WzxHeaderSize + index * sizeof(uint));
