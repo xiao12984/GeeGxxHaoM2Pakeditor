@@ -437,18 +437,15 @@ public sealed class MainController
     }
 
     /// <summary>
-    /// 生成不超过 48 像素且不放大小图的独立透明缩略图，避免视图缓存完整资源位图。
+    /// 生成适合资源网格浏览的独立透明缩略图，避免视图缓存完整资源位图。
     /// </summary>
     /// <param name="image">归档服务解码得到的原始图片。</param>
     /// <returns>由调用方交付给视图并由视图释放的缩略图。</returns>
     private static Image CreateThumbnail(Image image)
     {
-        // 参考 Gxx 编辑器的 80 逻辑像素资源网格，将大图限制在约半格尺寸以保留留白。
-        const int maximumSize = 48;
-        // 小尺寸资源保持原始像素尺寸，仅对超过缩略图上限的图片执行缩小。
-        var scale = Math.Min(
-            1F,
-            Math.Min(maximumSize / (float)image.Width, maximumSize / (float)image.Height));
+        // 缩略图用于快速辨认资源，允许小特效帧适度放大；大预览仍保持原始像素尺寸。
+        const int maximumSize = 56;
+        var scale = Math.Min(maximumSize / (float)image.Width, maximumSize / (float)image.Height);
         var width = Math.Max(1, (int)Math.Round(image.Width * scale));
         var height = Math.Max(1, (int)Math.Round(image.Height * scale));
         var thumbnail = new Bitmap(width, height);
