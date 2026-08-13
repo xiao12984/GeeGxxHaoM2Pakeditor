@@ -559,12 +559,32 @@ foreach ($file in $inputFiles) {
     }
 }
 
-$orderedResults = @($results | Sort-Object Path)
+$allResults = @($results | Sort-Object Path)
+$orderedResults = $allResults
 if ($OnlyProblems) {
     $orderedResults = @($orderedResults | Where-Object {
         $_.Status -notin @('M2Zip 候选（只读）', '项目 WZL 候选（可编辑）', '空 WZL/WZX')
     })
 }
+
+$reportColumns = @(
+    'Path',
+    'Companion',
+    'Family',
+    'Status',
+    'Confidence',
+    'Slots',
+    'EmptySlots',
+    'Blocks',
+    'ValidBlocks',
+    'InvalidBlocks',
+    'DuplicateRefs',
+    'ExtraIndexEntries',
+    'Encodes',
+    'DataBytes',
+    'IndexBytes',
+    'Issues'
+)
 
 if ($CsvPath) {
     $csvFullPath = [System.IO.Path]::GetFullPath($CsvPath)
@@ -573,18 +593,42 @@ if ($CsvPath) {
         [System.IO.Directory]::CreateDirectory($csvDirectory) | Out-Null
     }
 
-    $orderedResults | Export-Csv -LiteralPath $csvFullPath -NoTypeInformation -Encoding UTF8
+    if ($orderedResults.Count -gt 0) {
+        $orderedResults |
+            Select-Object $reportColumns |
+            Export-Csv -LiteralPath $csvFullPath -NoTypeInformation -Encoding UTF8
+    }
+    else {
+        # 即使问题过滤后没有记录，也写入表头，避免生成 0KB 文件让使用者误判为脚本失败。
+        $header = '"' + ($reportColumns -join '","') + '"'
+        Set-Content -LiteralPath $csvFullPath -Value $header -Encoding UTF8
+    }
+
     Write-Host "CSV 已写入：$csvFullPath"
 }
 
 if ($orderedResults.Count -eq 0) {
-    Write-Host '没有找到可分析的资源文件。'
+    if ($allResults.Count -eq 0) {
+        Write-Host '没有找到可分析的资源文件。'
+    }
+    elseif ($OnlyProblems) {
+        Write-Host ("已分析 {0} 个资源项，未发现需要关注的问题项。" -f $allResults.Count)
+    }
+    else {
+        Write-Host '没有可输出的资源项。'
+    }
+
     exit 0
 }
 
 $orderedResults |
-    Select-Object Path, Family, Status, Slots, Blocks, ValidBlocks, InvalidBlocks, Encodes, Issues |
+    Select-Object Path, Family, Status, Slots, Blocks, ValidBlocks, InvalidBlocks, ExtraIndexEntries, Encodes, Issues |
     Format-Table -AutoSize
 
 Write-Host ''
-Write-Host ("共分析 {0} 个资源项。" -f $orderedResults.Count)
+if ($OnlyProblems) {
+    Write-Host ("共分析 {0} 个资源项，输出 {1} 个问题项。" -f $allResults.Count, $orderedResults.Count)
+}
+else {
+    Write-Host ("共分析 {0} 个资源项。" -f $orderedResults.Count)
+}
