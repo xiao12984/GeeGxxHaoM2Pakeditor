@@ -14,7 +14,7 @@ internal sealed class ThumbnailGridControl : ScrollableControl
     private const int CellWidth = 80;
 
     /// <summary>
-    /// 每个资源格的固定高度，保留索引与格式标签的同时压缩整体高度。
+    /// 每个资源格的固定高度，仅保留缩略图与索引，避免格式文字遮挡预览。
     /// </summary>
     private const int CellHeight = 84;
 
@@ -66,13 +66,6 @@ internal sealed class ThumbnailGridControl : ScrollableControl
     /// 预缓存的字体。
     /// </summary>
     private static readonly Font LoadingFont = new("Microsoft YaHei UI", 6F);
-    private static readonly Font FormatFont = new("Microsoft YaHei UI", 5.75F);
-
-    /// <summary>
-    /// 格式标签预缓存画刷。
-    /// </summary>
-    private static readonly SolidBrush FormatBgBrush = new(Color.FromArgb(180, 240, 240, 240));
-    private static readonly SolidBrush FormatBgSelectedBrush = new(Color.FromArgb(80, 255, 255, 255));
 
     /// <summary>
     /// 当前完整资源槽位集合，保留实际对象供控制器读取。
@@ -573,27 +566,6 @@ internal sealed class ThumbnailGridControl : ScrollableControl
             textColor,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
 
-        // 绘制格式标签
-        if (!entry.IsEmpty)
-        {
-            var formatText = entry.FormatText;
-            var formatSize = TextRenderer.MeasureText(graphics, formatText, FormatFont);
-            var formatBounds = new Rectangle(
-                drawBounds.Left + 3,
-                drawBounds.Top + 3,
-                formatSize.Width + 4,
-                formatSize.Height + 1);
-            using var formatPath = GetRoundedRectangle(formatBounds, 2);
-            var formatBg = selected ? FormatBgSelectedBrush : FormatBgBrush;
-            graphics.FillPath(formatBg, formatPath);
-            TextRenderer.DrawText(
-                graphics,
-                formatText,
-                FormatFont,
-                formatBounds,
-                selected ? Color.FromArgb(220, 255, 255, 255) : Color.FromArgb(100, 100, 100),
-                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
-        }
     }
 
     /// <summary>

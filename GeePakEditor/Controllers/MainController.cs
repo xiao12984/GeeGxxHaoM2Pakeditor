@@ -370,7 +370,8 @@ public sealed class MainController
 
         var bitmap = _archiveService.DecodeImage(entry);
         _view.ShowPreview(bitmap);
-        _view.SetStatus($"索引 {entry.Index}  |  {entry.Width}x{entry.Height}  |  X={entry.X}, Y={entry.Y}");
+        // 格式信息统一放到底部状态栏，避免缩略图格子里的小文字遮挡资源预览。
+        _view.SetStatus($"索引 {entry.Index}  |  {entry.Width}x{entry.Height}  |  格式={entry.FormatText}  |  X={entry.X}, Y={entry.Y}");
     }
 
     /// <summary>
