@@ -6,6 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>12</LangVersion>
+    <AssemblyName>MirImgEditor</AssemblyName>
+    <Product>MirImgEditor</Product>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>

@@ -16,7 +16,7 @@ public sealed class MainForm : XtraForm, IMainView
     /// <summary>
     /// 未打开归档时显示的窗口标题。
     /// </summary>
-    private const string WindowTitle = "Gxx 资源编辑器 (Wil, Wis, Wzl, Pak)";
+    private const string WindowTitle = "Mir资源管理器";
 
     /// <summary>
     /// 左侧目录树的固定宽度。
