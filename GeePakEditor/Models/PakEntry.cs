@@ -21,7 +21,7 @@ public sealed class PakEntry
     [Browsable(false)]
     public byte ImageType { get; internal set; }
 
-    /// <summary>块头中的 Alpha 标志。</summary>
+    /// <summary>规范化后的块头标志；M2Zip 的同位置保留字段不会当作 Alpha 解释。</summary>
     [Browsable(false)]
     public byte Flags { get; internal set; }
 
