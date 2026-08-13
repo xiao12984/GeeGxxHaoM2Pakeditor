@@ -443,9 +443,13 @@ public sealed class MainController
     /// <returns>由调用方交付给视图并由视图释放的缩略图。</returns>
     private static Image CreateThumbnail(Image image)
     {
-        // 缩略图用于快速辨认资源，允许小特效帧适度放大；大预览仍保持原始像素尺寸。
-        const int maximumSize = 56;
-        var scale = Math.Min(maximumSize / (float)image.Width, maximumSize / (float)image.Height);
+        // 小图标保持原始像素尺寸，只有超过小预览区域时才按比例缩小；大预览仍保持原始像素尺寸。
+        // 该尺寸对应 80 x 84 资源网格扣除边距和索引栏后的 70 x 58 绘制区域。
+        const int maximumWidth = 70;
+        const int maximumHeight = 58;
+        var scale = Math.Min(
+            1F,
+            Math.Min(maximumWidth / (float)image.Width, maximumHeight / (float)image.Height));
         var width = Math.Max(1, (int)Math.Round(image.Width * scale));
         var height = Math.Max(1, (int)Math.Round(image.Height * scale));
         var thumbnail = new Bitmap(width, height);
