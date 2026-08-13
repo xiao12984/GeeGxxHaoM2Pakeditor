@@ -100,15 +100,15 @@ internal sealed class WzlArchiveReader
     }
 
     /// <summary>
-    /// 根据图片块类型和 M2Zip 保留字段识别 WZL 的读取变体。
+    /// 根据全部物理图片块的共同结构识别 WZL 的读取变体。
     /// </summary>
     /// <param name="data">完整 WZL 文件数据。</param>
     /// <param name="offsets">WZX 中读取出的逻辑槽位偏移。</param>
     /// <returns>后续读取图片块所需的格式变体。</returns>
     private static WzlReadMode DetectReadMode(byte[] data, IReadOnlyList<uint> offsets)
     {
-        var hasGeeImageType = false;
-        var hasM2ZipImageType = false;
+        var hasPhysicalBlock = false;
+        var hasOnlyM2ZipBlocks = true;
         var seenOffsets = new HashSet<uint>();
         foreach (var offset in offsets)
         {
@@ -124,36 +124,27 @@ internal sealed class WzlArchiveReader
             }
 
             var header = data.AsSpan(checked((int)offset), GeePakConstants.ImageHeaderSize);
-            if (LooksLikeM2ZipHeader(header))
+            hasPhysicalBlock = true;
+            if (!LooksLikeM2ZipHeader(header))
             {
-                hasM2ZipImageType = true;
-            }
-            else
-            {
-                hasGeeImageType = true;
+                hasOnlyM2ZipBlocks = false;
             }
         }
 
-        if (hasGeeImageType && hasM2ZipImageType)
-        {
-            throw new PakFormatException("WZL 同时包含 M2Zip 与 GEE 图片块，无法安全确定图片头含义。");
-        }
-
-        // 空归档没有可用于识别的图片块，沿用本项目创建的可写 WZL 变体。
-        return hasM2ZipImageType ? WzlReadMode.M2Zip : WzlReadMode.GeePak;
+        // xiami 将第 1 至第 3 字节定义为未确认保留字段，不能据此判定格式。
+        // 只有全部物理块均为 M2Zip 已确认的 Encode 3/5 时，才按 M2Zip 只读解析。
+        return hasPhysicalBlock && hasOnlyM2ZipBlocks ? WzlReadMode.M2Zip : WzlReadMode.GeePak;
     }
 
     /// <summary>
     /// 判断图片块是否符合 xiami M2Zip 的头部布局。
     /// </summary>
     /// <param name="header">图片块前 16 字节头部。</param>
-    /// <returns>符合 M2Zip 编码类型和已观察保留字段特征时返回 true。</returns>
+    /// <returns>符合 M2Zip 已确认编码类型时返回 true。</returns>
     private static bool LooksLikeM2ZipHeader(ReadOnlySpan<byte> header)
     {
         var imageType = header[0];
-        return imageType is 3 or 5 &&
-               header[1] == 0x01 &&
-               header[3] == 0x00;
+        return imageType is 3 or 5;
     }
 
     /// <summary>
