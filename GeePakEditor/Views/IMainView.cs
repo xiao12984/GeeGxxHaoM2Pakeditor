@@ -92,6 +92,9 @@ public interface IMainView
     /// <summary>向缩略图网格交付单个图片；窗口接管该图片的释放责任。</summary>
     void ShowThumbnail(int index, Image thumbnail);
 
+    /// <summary>清除失败缩略图的请求标记，使资源重新进入视口时可以重试。</summary>
+    void ResetThumbnailRequest(int index);
+
     /// <summary>设置忙碌状态与底部状态文本。</summary>
     void SetBusy(bool busy, string statusText);
 

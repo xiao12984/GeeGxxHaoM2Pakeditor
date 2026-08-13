@@ -202,6 +202,30 @@ internal sealed class ThumbnailGridControl : ScrollableControl
     }
 
     /// <summary>
+    /// 清除指定资源的缩略图请求标记，使失败的资源可以重新请求。
+    /// </summary>
+    /// <param name="index">资源逻辑索引。</param>
+    public void ResetThumbnailRequest(int index)
+    {
+        _requestedIndexes.Remove(index);
+        var visibleIndex = _visibleEntries.FindIndex(entry => entry.Index == index);
+        if (visibleIndex >= 0)
+        {
+            InvalidateCell(visibleIndex);
+        }
+    }
+
+    /// <summary>
+    /// 控件句柄建立后补发首轮可见缩略图请求，避免绑定归档时机过早导致资源一直停留在占位符。
+    /// </summary>
+    /// <param name="e">句柄创建参数。</param>
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        RequestVisibleThumbnails();
+    }
+
+    /// <summary>
     /// 在尺寸变化后重新计算网格列数和可滚动范围。
     /// </summary>
     /// <param name="e">尺寸变化参数。</param>

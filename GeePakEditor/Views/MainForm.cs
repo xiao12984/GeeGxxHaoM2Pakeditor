@@ -435,6 +435,12 @@ public sealed class MainForm : XtraForm, IMainView
     }
 
     /// <inheritdoc />
+    public void ResetThumbnailRequest(int index)
+    {
+        _thumbnailGrid.ResetThumbnailRequest(index);
+    }
+
+    /// <inheritdoc />
     public void SetBusy(bool busy, string statusText)
     {
         _progressBar.Visible = busy;

@@ -418,20 +418,32 @@ public sealed class MainController
         {
             foreach (var entry in deduplicatedEntries)
             {
-                using var image = _archiveService.DecodeImage(entry);
-                var thumbnail = CreateThumbnail(image);
-                _uiContext.Post(_ =>
+                try
                 {
-                    try
+                    using var image = _archiveService.DecodeImage(entry);
+                    var thumbnail = CreateThumbnail(image);
+                    _uiContext.Post(_ =>
                     {
-                        _view.ShowThumbnail(entry.Index, thumbnail);
-                    }
-                    catch
+                        try
+                        {
+                            _view.ShowThumbnail(entry.Index, thumbnail);
+                        }
+                        catch
+                        {
+                            thumbnail.Dispose();
+                            throw;
+                        }
+                    }, null);
+                }
+                catch (Exception exception)
+                {
+                    // 单个 WZL 资源解码失败时只跳过当前缩略图，避免中断同一批次的其他资源。
+                    _uiContext.Post(_ =>
                     {
-                        thumbnail.Dispose();
-                        throw;
-                    }
-                }, null);
+                        _view.ResetThumbnailRequest(entry.Index);
+                        _view.SetStatus($"缩略图索引 {entry.Index} 加载失败：{exception.Message}");
+                    }, null);
+                }
             }
         });
     }
