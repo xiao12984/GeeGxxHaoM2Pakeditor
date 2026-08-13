@@ -16,7 +16,6 @@ public sealed class MainController
     private readonly IMainView _view;
     private readonly IPakArchiveService _archiveService;
     private readonly PakPasswordService _passwordService;
-    private readonly SynchronizationContext _uiContext;
     private PakArchive? _archive;
     private bool _isDirty;
 
@@ -28,8 +27,6 @@ public sealed class MainController
         _view = view;
         _archiveService = archiveService;
         _passwordService = passwordService;
-        _uiContext = SynchronizationContext.Current
-            ?? throw new InvalidOperationException("MainController 必须在 UI 线程上创建。");
         _view.NewRequested += (_, _) => Execute(CreateNewArchive);
         _view.OpenRequested += (_, _) => Execute(() => OpenArchive());
         _view.ArchivePathOpenRequested += (_, arguments) => Execute(() => OpenArchive(arguments.FilePath));
@@ -422,7 +419,7 @@ public sealed class MainController
                 {
                     using var image = _archiveService.DecodeImage(entry);
                     var thumbnail = CreateThumbnail(image);
-                    _uiContext.Post(_ =>
+                    _view.InvokeOnUi(() =>
                     {
                         try
                         {
@@ -433,16 +430,16 @@ public sealed class MainController
                             thumbnail.Dispose();
                             throw;
                         }
-                    }, null);
+                    });
                 }
                 catch (Exception exception)
                 {
                     // 单个 WZL 资源解码失败时只跳过当前缩略图，避免中断同一批次的其他资源。
-                    _uiContext.Post(_ =>
+                    _view.InvokeOnUi(() =>
                     {
                         _view.ResetThumbnailRequest(entry.Index);
                         _view.SetStatus($"缩略图索引 {entry.Index} 加载失败：{exception.Message}");
-                    }, null);
+                    });
                 }
             }
         });

@@ -17,6 +17,9 @@ public interface IMainView
     /// <summary>用户从目录树指定归档文件请求打开。</summary>
     event EventHandler<ArchivePathRequestedEventArgs>? ArchivePathOpenRequested;
 
+    /// <summary>用户请求加载资源文件夹。</summary>
+    event EventHandler? FolderOpenRequested;
+
     /// <summary>用户请求保存当前归档。</summary>
     event EventHandler? SaveRequested;
 
@@ -53,6 +56,9 @@ public interface IMainView
     /// <summary>显示打开 PAK 对话框。</summary>
     string? SelectArchiveToOpen();
 
+    /// <summary>显示资源文件夹选择对话框。</summary>
+    string? SelectFolderToOpen();
+
     /// <summary>显示新建归档设置对话框。</summary>
     NewArchiveSettings? PromptNewArchiveSettings();
 
@@ -83,6 +89,9 @@ public interface IMainView
     /// <summary>绑定完整归档并更新窗口标题。</summary>
     void BindArchive(PakArchive archive);
 
+    /// <summary>绑定用户选择的资源文件夹分类。</summary>
+    void BindFolder(ResourceFolderCatalog catalog);
+
     /// <summary>刷新列表并尽量恢复指定索引的选择。</summary>
     void RefreshEntries(PakArchive archive, int? selectedIndex = null);
 
@@ -91,6 +100,9 @@ public interface IMainView
 
     /// <summary>向缩略图网格交付单个图片；窗口接管该图片的释放责任。</summary>
     void ShowThumbnail(int index, Image thumbnail);
+
+    /// <summary>把界面更新切回主窗口线程执行。</summary>
+    void InvokeOnUi(Action action);
 
     /// <summary>清除失败缩略图的请求标记，使资源重新进入视口时可以重试。</summary>
     void ResetThumbnailRequest(int index);

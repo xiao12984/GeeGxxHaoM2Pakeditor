@@ -435,6 +435,23 @@ public sealed class MainForm : XtraForm, IMainView
     }
 
     /// <inheritdoc />
+    public void InvokeOnUi(Action action)
+    {
+        if (IsDisposed || Disposing)
+        {
+            return;
+        }
+
+        if (InvokeRequired)
+        {
+            BeginInvoke(action);
+            return;
+        }
+
+        action();
+    }
+
+    /// <inheritdoc />
     public void ResetThumbnailRequest(int index)
     {
         _thumbnailGrid.ResetThumbnailRequest(index);
