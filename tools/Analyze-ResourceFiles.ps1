@@ -563,7 +563,8 @@ $allResults = @($results | Sort-Object Path)
 $orderedResults = $allResults
 if ($OnlyProblems) {
     $orderedResults = @($orderedResults | Where-Object {
-        $_.Status -notin @('M2Zip 候选（只读）', '项目 WZL 候选（可编辑）', '空 WZL/WZX')
+        $_.Status -notin @('M2Zip 候选（只读）', '项目 WZL 候选（可编辑）', '空 WZL/WZX') -or
+        [int]$_.ExtraIndexEntries -gt 0
     })
 }
 
