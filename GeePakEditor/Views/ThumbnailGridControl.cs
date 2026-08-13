@@ -48,6 +48,33 @@ internal sealed class ThumbnailGridControl : ScrollableControl
     private static readonly Color ShadowColor = Color.FromArgb(30, 0, 0, 0);
 
     /// <summary>
+    /// 预缓存的 GDI 画刷，避免每帧绘制重复创建。
+    /// </summary>
+    private static readonly SolidBrush CellBackgroundBrush = new(CellBackgroundColor);
+    private static readonly SolidBrush SelectedCellBrush = new(SelectedCellColor);
+    private static readonly SolidBrush HoverCellBrush = new(HoverCellColor);
+    private static readonly SolidBrush ShadowBrush = new(ShadowColor);
+    private static readonly SolidBrush ThumbBgBrush = new(Color.White);
+
+    /// <summary>
+    /// 预缓存的 GDI 画笔。
+    /// </summary>
+    private static readonly Pen SelectedBorderPen = new(SelectedBorderColor, 1.5F);
+    private static readonly Pen CellBorderPenValue = new(CellBorderColor, 1F);
+
+    /// <summary>
+    /// 预缓存的字体。
+    /// </summary>
+    private static readonly Font LoadingFont = new("Microsoft YaHei UI", 7F);
+    private static readonly Font FormatFont = new("Microsoft YaHei UI", 6.5F);
+
+    /// <summary>
+    /// 格式标签预缓存画刷。
+    /// </summary>
+    private static readonly SolidBrush FormatBgBrush = new(Color.FromArgb(180, 240, 240, 240));
+    private static readonly SolidBrush FormatBgSelectedBrush = new(Color.FromArgb(80, 255, 255, 255));
+
+    /// <summary>
     /// 当前完整资源槽位集合，保留实际对象供控制器读取。
     /// </summary>
     private readonly List<PakEntry> _allEntries = [];
@@ -92,6 +119,13 @@ internal sealed class ThumbnailGridControl : ScrollableControl
     /// </summary>
     public ThumbnailGridControl()
     {
+        // 资源网格完全自绘，统一开启双缓冲和尺寸变化重绘，避免滚动后残留旧编号。
+        SetStyle(
+            ControlStyles.AllPaintingInWmPaint |
+            ControlStyles.UserPaint |
+            ControlStyles.OptimizedDoubleBuffer |
+            ControlStyles.ResizeRedraw,
+            true);
         AutoScroll = true;
         BackColor = Color.White;
         DoubleBuffered = true;
@@ -166,7 +200,11 @@ internal sealed class ThumbnailGridControl : ScrollableControl
 
         _thumbnailCache[index] = thumbnail;
         _requestedIndexes.Remove(index);
-        Invalidate();
+        var visibleIndex = _visibleEntries.FindIndex(entry => entry.Index == index);
+        if (visibleIndex >= 0)
+        {
+            InvalidateCell(visibleIndex);
+        }
     }
 
     /// <summary>
@@ -178,6 +216,7 @@ internal sealed class ThumbnailGridControl : ScrollableControl
         base.OnSizeChanged(e);
         UpdateLayoutMetrics();
         RequestVisibleThumbnails();
+        Invalidate(ClientRectangle);
     }
 
     /// <summary>
@@ -208,15 +247,15 @@ internal sealed class ThumbnailGridControl : ScrollableControl
             return;
         }
 
-        var scrollOffset = AutoScrollPosition;
-        e.Graphics.TranslateTransform(scrollOffset.X, scrollOffset.Y);
         var (firstIndex, lastIndex) = GetVisibleRange();
         for (var index = firstIndex; index <= lastIndex; index++)
         {
-            DrawCell(e.Graphics, index, GetCellRectangle(index));
+            var cellBounds = GetCellClientRectangle(index);
+            if (cellBounds.IntersectsWith(e.ClipRectangle))
+            {
+                DrawCell(e.Graphics, index, cellBounds);
+            }
         }
-
-        e.Graphics.ResetTransform();
     }
 
     /// <summary>
@@ -253,11 +292,11 @@ internal sealed class ThumbnailGridControl : ScrollableControl
             _hoveredVisibleIndex = entryIndex;
             if (previousHover >= 0 && previousHover < _visibleEntries.Count)
             {
-                Invalidate(GetCellRectangle(previousHover));
+                InvalidateCell(previousHover);
             }
             if (_hoveredVisibleIndex >= 0 && _hoveredVisibleIndex < _visibleEntries.Count)
             {
-                Invalidate(GetCellRectangle(_hoveredVisibleIndex));
+                InvalidateCell(_hoveredVisibleIndex);
             }
         }
     }
@@ -273,7 +312,7 @@ internal sealed class ThumbnailGridControl : ScrollableControl
         {
             var previousHover = _hoveredVisibleIndex;
             _hoveredVisibleIndex = -1;
-            Invalidate(GetCellRectangle(previousHover));
+            InvalidateCell(previousHover);
         }
     }
 
@@ -468,20 +507,17 @@ internal sealed class ThumbnailGridControl : ScrollableControl
         // 绘制阴影（仅选中时）
         if (selected)
         {
-            using var shadowBrush = new SolidBrush(ShadowColor);
             var shadowBounds = new Rectangle(drawBounds.X + 1, drawBounds.Y + 2, drawBounds.Width, drawBounds.Height);
             using var shadowPath = GetRoundedRectangle(shadowBounds, CornerRadius);
-            graphics.FillPath(shadowBrush, shadowPath);
+            graphics.FillPath(ShadowBrush, shadowPath);
         }
 
         // 绘制单元格背景
-        var bgColor = selected ? SelectedCellColor : (hovered ? HoverCellColor : CellBackgroundColor);
-        using var bgBrush = new SolidBrush(bgColor);
+        var bgBrush = selected ? SelectedCellBrush : (hovered ? HoverCellBrush : CellBackgroundBrush);
         graphics.FillPath(bgBrush, path);
 
         // 绘制单元格边框
-        var borderColor = selected ? SelectedBorderColor : CellBorderColor;
-        using var borderPen = new Pen(borderColor, selected ? 1.5F : 1F);
+        var borderPen = selected ? SelectedBorderPen : CellBorderPenValue;
         graphics.DrawPath(borderPen, path);
 
         // 绘制缩略图区域
@@ -492,9 +528,8 @@ internal sealed class ThumbnailGridControl : ScrollableControl
             drawBounds.Height - 32);
 
         // 缩略图背景
-        using var thumbBgBrush = new SolidBrush(Color.White);
         using var thumbPath = GetRoundedRectangle(thumbnailArea, 3);
-        graphics.FillPath(thumbBgBrush, thumbPath);
+        graphics.FillPath(ThumbBgBrush, thumbPath);
 
         if (_thumbnailCache.TryGetValue(entry.Index, out var thumbnail))
         {
@@ -510,13 +545,12 @@ internal sealed class ThumbnailGridControl : ScrollableControl
         else if (!entry.IsEmpty)
         {
             // 显示加载中的占位符
-            using var loadingFont = new Font("Microsoft YaHei UI", 7F);
             var loadingText = "...";
-            var loadingSize = TextRenderer.MeasureText(graphics, loadingText, loadingFont);
+            var loadingSize = TextRenderer.MeasureText(graphics, loadingText, LoadingFont);
             TextRenderer.DrawText(
                 graphics,
                 loadingText,
-                loadingFont,
+                LoadingFont,
                 new Point(
                     thumbnailArea.Left + (thumbnailArea.Width - loadingSize.Width) / 2,
                     thumbnailArea.Top + (thumbnailArea.Height - loadingSize.Height) / 2),
@@ -542,21 +576,19 @@ internal sealed class ThumbnailGridControl : ScrollableControl
         if (!entry.IsEmpty)
         {
             var formatText = entry.FormatText;
-            var formatSize = TextRenderer.MeasureText(graphics, formatText, new Font("Microsoft YaHei UI", 6.5F));
+            var formatSize = TextRenderer.MeasureText(graphics, formatText, FormatFont);
             var formatBounds = new Rectangle(
                 drawBounds.Left + 4,
                 drawBounds.Top + 4,
                 formatSize.Width + 6,
                 formatSize.Height + 2);
             using var formatPath = GetRoundedRectangle(formatBounds, 2);
-            using var formatBg = new SolidBrush(selected
-                ? Color.FromArgb(80, 255, 255, 255)
-                : Color.FromArgb(180, 240, 240, 240));
+            var formatBg = selected ? FormatBgSelectedBrush : FormatBgBrush;
             graphics.FillPath(formatBg, formatPath);
             TextRenderer.DrawText(
                 graphics,
                 formatText,
-                new Font("Microsoft YaHei UI", 6.5F),
+                FormatFont,
                 formatBounds,
                 selected ? Color.FromArgb(220, 255, 255, 255) : Color.FromArgb(100, 100, 100),
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
@@ -632,13 +664,23 @@ internal sealed class ThumbnailGridControl : ScrollableControl
 
         var previousIndex = _selectedVisibleIndex;
         _selectedVisibleIndex = visibleIndex;
+        var previousScrollPosition = AutoScrollPosition;
         ScrollSelectedEntryIntoView();
-        if (previousIndex >= 0)
+        if (previousScrollPosition != AutoScrollPosition)
         {
-            Invalidate(GetCellRectangle(previousIndex));
+            Invalidate(ClientRectangle);
+            RequestVisibleThumbnails();
+        }
+        else
+        {
+            if (previousIndex >= 0)
+            {
+                InvalidateCell(previousIndex);
+            }
+
+            InvalidateCell(_selectedVisibleIndex);
         }
 
-        Invalidate(GetCellRectangle(_selectedVisibleIndex));
         if (raiseSelectionChanged)
         {
             SelectionChanged?.Invoke(this, EventArgs.Empty);
@@ -682,6 +724,34 @@ internal sealed class ThumbnailGridControl : ScrollableControl
             row * (CellHeight + CellMargin),
             CellWidth + CellMargin,
             CellHeight + CellMargin);
+    }
+
+    /// <summary>
+    /// 将虚拟滚动画布中的资源格区域转换为当前客户区坐标。
+    /// </summary>
+    /// <param name="visibleIndex">资源在筛选集合中的位置。</param>
+    /// <returns>资源格在当前客户区中的绘制区域。</returns>
+    private Rectangle GetCellClientRectangle(int visibleIndex)
+    {
+        var cellBounds = GetCellRectangle(visibleIndex);
+        cellBounds.Offset(AutoScrollPosition);
+        return cellBounds;
+    }
+
+    /// <summary>
+    /// 按客户区坐标刷新单个资源格，避免滚动后用虚拟坐标失效导致编号残留。
+    /// </summary>
+    /// <param name="visibleIndex">资源在筛选集合中的位置。</param>
+    private void InvalidateCell(int visibleIndex)
+    {
+        if (visibleIndex < 0 || visibleIndex >= _visibleEntries.Count)
+        {
+            return;
+        }
+
+        var bounds = GetCellClientRectangle(visibleIndex);
+        bounds.Inflate(3, 3);
+        Invalidate(bounds);
     }
 
     /// <summary>
