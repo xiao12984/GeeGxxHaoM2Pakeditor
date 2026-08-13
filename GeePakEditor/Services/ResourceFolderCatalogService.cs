@@ -24,8 +24,8 @@ public sealed class ResourceFolderCatalogService
         new("Magic", "技能(Magic)"),
         new("MagIcon", "技能图标(MagIcon)"),
         new("Hair", "头部发形(Hair)"),
-        new(@"Graphics\Human", "人物外观(Graphics\Human)"),
-        new(@"Graphics\Weapon", "武器外观(Graphics\Weapon)")
+        new(@"Graphics\Human", @"人物外观(Graphics\Human)"),
+        new(@"Graphics\Weapon", @"武器外观(Graphics\Weapon)")
     ];
 
     /// <summary>
