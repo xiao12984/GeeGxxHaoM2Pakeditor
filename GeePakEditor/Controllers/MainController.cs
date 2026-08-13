@@ -16,20 +16,27 @@ public sealed class MainController
     private readonly IMainView _view;
     private readonly IPakArchiveService _archiveService;
     private readonly PakPasswordService _passwordService;
+    private readonly ResourceFolderCatalogService _resourceFolderCatalogService;
     private PakArchive? _archive;
     private bool _isDirty;
 
     /// <summary>
     /// 绑定所有窗口命令，并初始化空状态。
     /// </summary>
-    public MainController(IMainView view, IPakArchiveService archiveService, PakPasswordService passwordService)
+    public MainController(
+        IMainView view,
+        IPakArchiveService archiveService,
+        PakPasswordService passwordService,
+        ResourceFolderCatalogService resourceFolderCatalogService)
     {
         _view = view;
         _archiveService = archiveService;
         _passwordService = passwordService;
+        _resourceFolderCatalogService = resourceFolderCatalogService;
         _view.NewRequested += (_, _) => Execute(CreateNewArchive);
         _view.OpenRequested += (_, _) => Execute(() => OpenArchive());
         _view.ArchivePathOpenRequested += (_, arguments) => Execute(() => OpenArchive(arguments.FilePath));
+        _view.FolderOpenRequested += (_, _) => Execute(OpenFolder);
         _view.SaveRequested += (_, _) => Execute(SaveArchive);
         _view.SaveAsRequested += (_, _) => Execute(SaveArchiveAs);
         _view.AddRequested += (_, _) => Execute(AddImages);
@@ -41,6 +48,42 @@ public sealed class MainController
         _view.ThumbnailsRequested += (_, arguments) => Execute(() => LoadThumbnails(arguments.Entries));
         _view.ClosingRequested += (_, arguments) => ConfirmClosing(arguments);
         _view.UpdateCommandState(false, false, false);
+    }
+
+    /// <summary>
+    /// 选择并加载资源文件夹分类；文件夹本身不进入归档解析链路。
+    /// </summary>
+    private void OpenFolder()
+    {
+        if (_isDirty && !_view.ConfirmDiscardChanges())
+        {
+            return;
+        }
+
+        var folderPath = _view.SelectFolderToOpen();
+        if (string.IsNullOrWhiteSpace(folderPath))
+        {
+            return;
+        }
+
+        var finalStatus = "文件夹加载未完成";
+        _view.SetBusy(true, "正在扫描资源分类...");
+        try
+        {
+            var catalog = _resourceFolderCatalogService.Load(folderPath);
+            _archive = null;
+            _isDirty = false;
+            _view.BindFolder(catalog);
+            _view.UpdateCommandState(false, false, false);
+            _view.ShowPreview(null);
+            finalStatus = catalog.Categories.Count == 0
+                ? "已加载文件夹，但未找到固定资源分类"
+                : $"已加载 {catalog.Categories.Count} 个资源分类";
+        }
+        finally
+        {
+            _view.SetBusy(false, finalStatus);
+        }
     }
 
     /// <summary>

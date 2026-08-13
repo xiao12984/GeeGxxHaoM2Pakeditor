@@ -29,8 +29,10 @@ internal static class Program
         var imageCodec = new PakImageCodec();
         var archiveService = new GeePakArchiveService(keyProvider, imageCodec);
         var passwordService = new PakPasswordService();
+        // 分类服务只负责读取用户选择的资源根目录，不参与 PAK/WZL 解码。
+        var resourceFolderCatalogService = new ResourceFolderCatalogService();
         using var mainForm = new MainForm();
-        _ = new MainController(mainForm, archiveService, passwordService);
+        _ = new MainController(mainForm, archiveService, passwordService, resourceFolderCatalogService);
         Application.Run(mainForm);
     }
 }

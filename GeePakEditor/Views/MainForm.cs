@@ -24,21 +24,6 @@ public sealed class MainForm : XtraForm, IMainView
     private const int NavigationWidth = 240;
 
     /// <summary>
-    /// 左侧目录树的系统根节点图标键。
-    /// </summary>
-    private const string ComputerNodeImageKey = "computer";
-
-    /// <summary>
-    /// 左侧目录树的库节点图标键。
-    /// </summary>
-    private const string LibraryNodeImageKey = "library";
-
-    /// <summary>
-    /// 左侧目录树的磁盘节点图标键。
-    /// </summary>
-    private const string DriveNodeImageKey = "drive";
-
-    /// <summary>
     /// 左侧目录树的目录节点图标键。
     /// </summary>
     private const string FolderNodeImageKey = "folder";
@@ -47,11 +32,6 @@ public sealed class MainForm : XtraForm, IMainView
     /// 左侧目录树的可打开归档文件图标键。
     /// </summary>
     private const string ArchiveNodeImageKey = "archive";
-
-    /// <summary>
-    /// 左侧目录树的可执行文件图标键。
-    /// </summary>
-    private const string ExeNodeImageKey = "exe";
 
     /// <summary>
     /// 现代主题配色常量。
@@ -72,6 +52,7 @@ public sealed class MainForm : XtraForm, IMainView
     /// </summary>
     private readonly SimpleButton _newButton;
     private readonly SimpleButton _openButton;
+    private readonly SimpleButton _folderButton;
     private readonly SimpleButton _saveButton;
     private readonly SimpleButton _saveAsButton;
     private readonly SimpleButton _addButton;
@@ -88,9 +69,10 @@ public sealed class MainForm : XtraForm, IMainView
     private readonly ThumbnailGridControl _thumbnailGrid;
 
     /// <summary>
-    /// 底部状态栏控件与资源偏移编辑器。
+    /// 路径栏、底部状态栏控件与资源偏移编辑器。
     /// </summary>
     private readonly LabelControl _archiveLabel;
+    private readonly TextEdit _pathEdit;
     private readonly LabelControl _selectionLabel;
     private readonly LabelControl _statusLabel;
     private readonly MarqueeProgressBarControl _progressBar;
@@ -137,7 +119,8 @@ public sealed class MainForm : XtraForm, IMainView
         Appearance.BackColor = PanelBackgroundColor;
 
         _newButton = CreateCommandButton("新建", "New;Size16x16");
-        _openButton = CreateCommandButton("打开", "Open;Size16x16");
+        _openButton = CreateCommandButton("文件", "Open;Size16x16");
+        _folderButton = CreateCommandButton("文件夹", "OpenFolder;Size16x16");
         _saveButton = CreateCommandButton("保存", "Save;Size16x16");
         _saveAsButton = CreateCommandButton("另存为", "SaveAs;Size16x16");
         _addButton = CreateCommandButton("导入", "AddItem;Size16x16");
@@ -156,6 +139,14 @@ public sealed class MainForm : XtraForm, IMainView
             Text = "未打开归档",
             Appearance = { ForeColor = Color.FromArgb(100, 100, 100) }
         };
+        _pathEdit = new TextEdit
+        {
+            Text = "请选择文件或文件夹",
+            ToolTip = "当前文件或资源文件夹路径",
+            BackColor = Color.White
+        };
+        // 路径栏仅用于展示当前文件或资源根目录，禁止用户直接编辑。
+        _pathEdit.Properties.ReadOnly = true;
         _selectionLabel = new LabelControl
         {
             AutoSizeMode = LabelAutoSizeMode.None,
@@ -198,7 +189,6 @@ public sealed class MainForm : XtraForm, IMainView
         Controls.Add(mainLayout);
 
         BindEvents();
-        PopulateDriveNodes();
         UpdateCommandState(false, false, false);
         SynchronizeMetadataEditors(null);
         Shown += (_, _) => CorrectSplitterDistance();
@@ -213,6 +203,9 @@ public sealed class MainForm : XtraForm, IMainView
 
     /// <inheritdoc />
     public event EventHandler<ArchivePathRequestedEventArgs>? ArchivePathOpenRequested;
+
+    /// <inheritdoc />
+    public event EventHandler? FolderOpenRequested;
 
     /// <inheritdoc />
     public event EventHandler? SaveRequested;
@@ -258,6 +251,18 @@ public sealed class MainForm : XtraForm, IMainView
             Multiselect = false
         };
         return dialog.ShowDialog(this) == DialogResult.OK ? dialog.FileName : null;
+    }
+
+    /// <inheritdoc />
+    public string? SelectFolderToOpen()
+    {
+        using var dialog = new FolderBrowserDialog
+        {
+            Description = "选择资源文件夹",
+            ShowNewFolderButton = false,
+            UseDescriptionForTitle = true
+        };
+        return dialog.ShowDialog(this) == DialogResult.OK ? dialog.SelectedPath : null;
     }
 
     /// <inheritdoc />
@@ -398,10 +403,61 @@ public sealed class MainForm : XtraForm, IMainView
     {
         Text = $"{WindowTitle} - {Path.GetFileName(archive.FilePath)}";
         _archiveLabel.Text = archive.FilePath;
+        _pathEdit.Text = archive.FilePath;
         _canWriteArchive = archive.CanWrite;
         _slotCount = archive.Slots.Count;
         _imageCount = archive.ImageCount;
         RefreshEntries(archive);
+    }
+
+    /// <inheritdoc />
+    public void BindFolder(ResourceFolderCatalog catalog)
+    {
+        var folderName = Path.GetFileName(catalog.RootPath.TrimEnd(
+            Path.DirectorySeparatorChar,
+            Path.AltDirectorySeparatorChar));
+        Text = string.IsNullOrWhiteSpace(folderName)
+            ? WindowTitle
+            : $"{WindowTitle} - {folderName}";
+        _archiveLabel.Text = catalog.RootPath;
+        _pathEdit.Text = catalog.RootPath;
+        _canWriteArchive = false;
+        _slotCount = 0;
+        _imageCount = 0;
+
+        _directoryTree.BeginUpdate();
+        try
+        {
+            _directoryTree.Nodes.Clear();
+            foreach (var category in catalog.Categories)
+            {
+                var categoryNode = new TreeNode(category.DisplayName)
+                {
+                    Tag = category.DirectoryPath,
+                    ImageKey = FolderNodeImageKey,
+                    SelectedImageKey = FolderNodeImageKey
+                };
+                foreach (var file in category.Files)
+                {
+                    categoryNode.Nodes.Add(new TreeNode(file.FileName)
+                    {
+                        Tag = file.FilePath,
+                        ImageKey = ArchiveNodeImageKey,
+                        SelectedImageKey = ArchiveNodeImageKey
+                    });
+                }
+
+                _directoryTree.Nodes.Add(categoryNode);
+            }
+        }
+        finally
+        {
+            _directoryTree.EndUpdate();
+        }
+
+        _thumbnailGrid.SetEntries(Array.Empty<PakEntry>(), null);
+        SynchronizeMetadataEditors(null);
+        UpdateSelectionLabel();
     }
 
     /// <inheritdoc />
@@ -565,9 +621,9 @@ public sealed class MainForm : XtraForm, IMainView
     }
 
     /// <summary>
-    /// 创建目录树使用的 Windows 风格小图标集合。
+    /// 创建分类树使用的文件夹和归档文件图标集合。
     /// </summary>
-    /// <returns>已包含根节点、库、磁盘、目录和归档文件图标的图片列表。</returns>
+    /// <returns>已包含分类目录和归档文件图标的图片列表。</returns>
     private static ImageList CreateDirectoryTreeImages()
     {
         var images = new ImageList
@@ -576,35 +632,13 @@ public sealed class MainForm : XtraForm, IMainView
             ImageSize = new Size(18, 18),
             TransparentColor = Color.Transparent
         };
-        images.Images.Add(ComputerNodeImageKey, CreateComputerIcon());
-        images.Images.Add(LibraryNodeImageKey, CreateFolderIcon(Color.FromArgb(246, 198, 60)));
-        images.Images.Add(DriveNodeImageKey, CreateDriveIcon());
         images.Images.Add(FolderNodeImageKey, CreateFolderIcon(Color.FromArgb(246, 198, 60)));
         images.Images.Add(ArchiveNodeImageKey, CreateArchiveIcon());
-        images.Images.Add(ExeNodeImageKey, CreateExeIcon());
         return images;
     }
 
     /// <summary>
-    /// 绘制“此电脑”节点的显示器图标。
-    /// </summary>
-    /// <returns>目录树可直接使用的位图图标。</returns>
-    private static Bitmap CreateComputerIcon()
-    {
-        var bitmap = CreateTreeIconCanvas();
-        using var graphics = Graphics.FromImage(bitmap);
-        graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        using var screenBrush = new SolidBrush(Color.FromArgb(65, 168, 205));
-        using var borderPen = new Pen(Color.FromArgb(70, 92, 104));
-        graphics.FillRectangle(screenBrush, 3, 3, 12, 9);
-        graphics.DrawRectangle(borderPen, 3, 3, 12, 9);
-        graphics.DrawLine(borderPen, 8, 12, 8, 15);
-        graphics.DrawLine(borderPen, 5, 15, 12, 15);
-        return bitmap;
-    }
-
-    /// <summary>
-    /// 绘制目录或库节点的文件夹图标。
+    /// 绘制资源分类节点使用的文件夹图标。
     /// </summary>
     /// <param name="bodyColor">文件夹主体颜色。</param>
     /// <returns>目录树可直接使用的位图图标。</returns>
@@ -622,26 +656,6 @@ public sealed class MainForm : XtraForm, IMainView
         return bitmap;
     }
 
-    /// <summary>
-    /// 绘制本地磁盘节点图标。
-    /// </summary>
-    /// <returns>目录树可直接使用的位图图标。</returns>
-    private static Bitmap CreateDriveIcon()
-    {
-        var bitmap = CreateTreeIconCanvas();
-        using var graphics = Graphics.FromImage(bitmap);
-        graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        using var bodyBrush = new SolidBrush(Color.FromArgb(230, 234, 236));
-        using var borderPen = new Pen(Color.FromArgb(90, 90, 90));
-        using var lightPen = new Pen(Color.FromArgb(250, 250, 250));
-        using var ledBrush = new SolidBrush(Color.FromArgb(42, 170, 78));
-        var driveBounds = new Rectangle(3, 8, 12, 6);
-        graphics.FillRectangle(bodyBrush, driveBounds);
-        graphics.DrawRectangle(borderPen, driveBounds);
-        graphics.DrawLine(lightPen, 4, 9, 14, 9);
-        graphics.FillRectangle(ledBrush, 5, 11, 3, 2);
-        return bitmap;
-    }
 
     /// <summary>
     /// 绘制 PAK/WZL 归档文件节点图标。
@@ -666,30 +680,6 @@ public sealed class MainForm : XtraForm, IMainView
         return bitmap;
     }
 
-    /// <summary>
-    /// 绘制可执行文件节点图标。
-    /// </summary>
-    /// <returns>目录树可直接使用的位图图标。</returns>
-    private static Bitmap CreateExeIcon()
-    {
-        var bitmap = CreateTreeIconCanvas();
-        using var graphics = Graphics.FromImage(bitmap);
-        graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        using var bodyBrush = new SolidBrush(Color.FromArgb(245, 247, 250));
-        using var borderPen = new Pen(Color.FromArgb(108, 124, 140));
-        using var titleBrush = new SolidBrush(Color.FromArgb(120, 136, 152));
-        using var labelPen = new Pen(Color.FromArgb(77, 109, 147));
-
-        var bounds = new Rectangle(4, 2, 10, 14);
-        graphics.FillRectangle(bodyBrush, bounds);
-        graphics.DrawRectangle(borderPen, bounds);
-        graphics.FillRectangle(titleBrush, 4, 2, 10, 3);
-        graphics.DrawLine(borderPen, 7, 6, 11, 6);
-        graphics.DrawLine(borderPen, 7, 8, 11, 8);
-        graphics.DrawLine(labelPen, 7, 11, 10, 11);
-        graphics.DrawLine(labelPen, 7, 13, 11, 13);
-        return bitmap;
-    }
 
     /// <summary>
     /// 创建目录树图标的透明画布。
@@ -704,7 +694,7 @@ public sealed class MainForm : XtraForm, IMainView
     }
 
     /// <summary>
-    /// 创建左侧磁盘和目录浏览树，采用现代配色。
+    /// 创建左侧资源分类树，采用现代配色。
     /// </summary>
     /// <param name="imageList">目录树节点图标列表。</param>
     /// <returns>用于打开本地 PAK/WZL 文件的目录树。</returns>
@@ -755,18 +745,27 @@ public sealed class MainForm : XtraForm, IMainView
     /// </summary>
     private void BuildWorkspace()
     {
-        // 左侧目录树面板，带圆角边框感
+        // 左侧资源导航面板：路径栏固定在顶部，分类树占用剩余空间。
         var leftPanel = new PanelControl
         {
             Dock = DockStyle.Fill,
             BorderStyle = BorderStyles.NoBorder,
-            Appearance = { BackColor = Color.FromArgb(207, 207, 207) }
+            Appearance = { BackColor = Color.FromArgb(207, 207, 207) },
+            Padding = new Padding(8)
         };
         leftPanel.Paint += (_, e) =>
         {
             e.Graphics.DrawLine(BorderPen, leftPanel.Width - 1, 0, leftPanel.Width - 1, leftPanel.Height);
         };
+        _pathEdit.Dock = DockStyle.Top;
+        _pathEdit.Height = 28;
+        _pathEdit.Properties.ReadOnly = true;
+        _pathEdit.Properties.Appearance.BackColor = Color.White;
+        _pathEdit.Properties.Appearance.ForeColor = Color.FromArgb(80, 80, 80);
+        _pathEdit.Margin = new Padding(0, 0, 0, 8);
+        _directoryTree.Dock = DockStyle.Fill;
         leftPanel.Controls.Add(_directoryTree);
+        leftPanel.Controls.Add(_pathEdit);
 
         _workspaceSplit.Panel1.MinSize = 180;
         _workspaceSplit.Panel2.MinSize = 520;
@@ -830,9 +829,10 @@ public sealed class MainForm : XtraForm, IMainView
             Padding = new Padding(0, 4, 4, 4)
         };
 
-        // 第一个按钮组从左侧直接开始，移除品牌区后不再保留额外占位。
+        // 文件和文件夹是两个独立入口，均复用控制器已有打开链路。
         buttonFlow.Controls.Add(_newButton);
         buttonFlow.Controls.Add(_openButton);
+        buttonFlow.Controls.Add(_folderButton);
         buttonFlow.Controls.Add(_saveButton);
         buttonFlow.Controls.Add(_saveAsButton);
 
@@ -931,13 +931,13 @@ public sealed class MainForm : XtraForm, IMainView
     {
         _newButton.Click += (_, _) => NewRequested?.Invoke(this, EventArgs.Empty);
         _openButton.Click += (_, _) => OpenRequested?.Invoke(this, EventArgs.Empty);
+        _folderButton.Click += (_, _) => FolderOpenRequested?.Invoke(this, EventArgs.Empty);
         _saveButton.Click += (_, _) => SaveRequested?.Invoke(this, EventArgs.Empty);
         _saveAsButton.Click += (_, _) => SaveAsRequested?.Invoke(this, EventArgs.Empty);
         _addButton.Click += (_, _) => AddRequested?.Invoke(this, EventArgs.Empty);
         _replaceButton.Click += (_, _) => ReplaceRequested?.Invoke(this, EventArgs.Empty);
         _exportButton.Click += (_, _) => ExportRequested?.Invoke(this, EventArgs.Empty);
         _deleteButton.Click += (_, _) => DeleteRequested?.Invoke(this, EventArgs.Empty);
-        _directoryTree.BeforeExpand += OnDirectoryTreeBeforeExpand;
         _directoryTree.NodeMouseDoubleClick += OnDirectoryTreeNodeMouseDoubleClick;
         _thumbnailGrid.SelectionChanged += (_, _) => SelectionChanged?.Invoke(this, EventArgs.Empty);
         _thumbnailGrid.EntryDoubleClicked += (_, _) =>
@@ -952,149 +952,6 @@ public sealed class MainForm : XtraForm, IMainView
         _yOffsetEdit.EditValueChanged += (_, _) => UpdateOffsetFromEditor(_yOffsetEdit, false);
         KeyDown += OnShortcutKeyDown;
         FormClosing += (_, arguments) => ClosingRequested?.Invoke(this, arguments);
-    }
-
-    /// <summary>
-    /// 将“此电脑”和本机可用盘符加入目录树根节点。
-    /// </summary>
-    private void PopulateDriveNodes()
-    {
-        _directoryTree.BeginUpdate();
-        try
-        {
-            _directoryTree.Nodes.Clear();
-            var computerNode = new TreeNode("此电脑")
-            {
-                ImageKey = ComputerNodeImageKey,
-                SelectedImageKey = ComputerNodeImageKey
-            };
-            var libraryNode = new TreeNode("库")
-            {
-                ImageKey = LibraryNodeImageKey,
-                SelectedImageKey = LibraryNodeImageKey
-            };
-
-            // 库节点暂不承载业务命令，仅作为资源管理器式导航分组占位。
-            _directoryTree.Nodes.Add(computerNode);
-            _directoryTree.Nodes.Add(libraryNode);
-
-            Task.Run(() =>
-            {
-                var drives = DriveInfo.GetDrives()
-                    .Where(drive => drive.IsReady)
-                    .Select(drive =>
-                    {
-                        var driveName = drive.Name.TrimEnd(Path.DirectorySeparatorChar);
-                        var label = string.IsNullOrWhiteSpace(drive.VolumeLabel)
-                            ? $"({driveName}) 本地磁盘"
-                            : $"({driveName}) {drive.VolumeLabel}";
-                        return (label, path: drive.RootDirectory.FullName);
-                    })
-                    .ToList();
-
-                BeginInvoke(() =>
-                {
-                    _directoryTree.BeginUpdate();
-                    try
-                    {
-                        foreach (var (label, path) in drives)
-                        {
-                            AddDirectoryNode(_directoryTree.Nodes, label, path, DriveNodeImageKey);
-                        }
-                    }
-                    finally
-                    {
-                        _directoryTree.EndUpdate();
-                    }
-                });
-            });
-        }
-        finally
-        {
-            _directoryTree.EndUpdate();
-        }
-    }
-
-    /// <summary>
-    /// 首次展开目录时异步读取子目录和可打开的归档文件，避免大量文件枚举阻塞 UI。
-    /// </summary>
-    /// <param name="sender">事件来源。</param>
-    /// <param name="e">即将展开的目录树节点。</param>
-    private void OnDirectoryTreeBeforeExpand(object? sender, TreeViewCancelEventArgs e)
-    {
-        var node = e.Node;
-        if (node is null || node.Tag is not string directoryPath || !Directory.Exists(directoryPath))
-        {
-            return;
-        }
-
-        if (node.Nodes.Count == 1 && node.Nodes[0].Tag is null)
-        {
-            // 清除占位节点，添加加载提示
-            node.Nodes.Clear();
-            node.Nodes.Add(new TreeNode("加载中..."));
-
-            Task.Run(() =>
-            {
-                var items = new List<(string Name, string Path, string ImageKey, string SelectedImageKey)>();
-                try
-                {
-                    foreach (var childDirectory in Directory.EnumerateDirectories(directoryPath)
-                                 .OrderBy(p => Path.GetFileName(p), StringComparer.OrdinalIgnoreCase))
-                    {
-                        items.Add((Path.GetFileName(childDirectory), childDirectory,
-                            FolderNodeImageKey, FolderNodeImageKey));
-                    }
-
-                    foreach (var archivePath in Directory.EnumerateFiles(directoryPath)
-                                 .Where(IsArchiveFile)
-                                 .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
-                    {
-                        items.Add((Path.GetFileName(archivePath), archivePath,
-                            ArchiveNodeImageKey, ArchiveNodeImageKey));
-                    }
-
-                    foreach (var executablePath in Directory.EnumerateFiles(directoryPath)
-                                 .Where(IsExecutableFile)
-                                 .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
-                    {
-                        items.Add((Path.GetFileName(executablePath), executablePath,
-                            ExeNodeImageKey, ExeNodeImageKey));
-                    }
-                }
-                catch (UnauthorizedAccessException) { }
-                catch (IOException) { }
-
-                BeginInvoke(() =>
-                {
-                    _directoryTree.BeginUpdate();
-                    try
-                    {
-                        node.Nodes.Clear();
-                        foreach (var (name, path, imageKey, selectedImageKey) in items)
-                        {
-                            if (imageKey == FolderNodeImageKey)
-                            {
-                                AddDirectoryNode(node.Nodes, name, path);
-                            }
-                            else
-                            {
-                                node.Nodes.Add(new TreeNode(name)
-                                {
-                                    Tag = path,
-                                    ImageKey = imageKey,
-                                    SelectedImageKey = selectedImageKey
-                                });
-                            }
-                        }
-                    }
-                    finally
-                    {
-                        _directoryTree.EndUpdate();
-                    }
-                });
-            });
-        }
     }
 
     /// <summary>
@@ -1113,92 +970,6 @@ public sealed class MainForm : XtraForm, IMainView
     }
 
     /// <summary>
-    /// 读取一个目录的一层子目录和 PAK/WZL 文件，并容忍无权限目录。
-    /// </summary>
-    /// <param name="parentNode">需要填充的目录节点。</param>
-    /// <param name="directoryPath">待读取的目录完整路径。</param>
-    private static void PopulateDirectoryNode(TreeNode parentNode, string directoryPath)
-    {
-        parentNode.Nodes.Clear();
-        try
-        {
-            foreach (var childDirectory in Directory.EnumerateDirectories(directoryPath).OrderBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase))
-            {
-                AddDirectoryNode(parentNode.Nodes, Path.GetFileName(childDirectory), childDirectory);
-            }
-
-            foreach (var archivePath in Directory.EnumerateFiles(directoryPath)
-                         .Where(IsArchiveFile)
-                         .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
-            {
-                parentNode.Nodes.Add(new TreeNode(Path.GetFileName(archivePath))
-                {
-                    Tag = archivePath,
-                    ImageKey = ArchiveNodeImageKey,
-                    SelectedImageKey = ArchiveNodeImageKey
-                });
-            }
-
-            foreach (var executablePath in Directory.EnumerateFiles(directoryPath)
-                         .Where(IsExecutableFile)
-                         .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
-            {
-                parentNode.Nodes.Add(new TreeNode(Path.GetFileName(executablePath))
-                {
-                    Tag = executablePath,
-                    ImageKey = ExeNodeImageKey,
-                    SelectedImageKey = ExeNodeImageKey
-                });
-            }
-        }
-        catch (UnauthorizedAccessException)
-        {
-            // 没有权限的目录保持为空节点，避免目录树操作中断。
-        }
-        catch (IOException)
-        {
-            // 移动介质或网络路径不可用时忽略当前节点。
-        }
-    }
-
-    /// <summary>
-    /// 向“此电脑”节点加入一个本地磁盘节点。
-    /// </summary>
-    /// <param name="nodes">目标节点集合。</param>
-    /// <param name="drive">本机磁盘信息。</param>
-    private static void AddDriveNode(TreeNodeCollection nodes, DriveInfo drive)
-    {
-        var driveName = drive.Name.TrimEnd(Path.DirectorySeparatorChar);
-        var label = string.IsNullOrWhiteSpace(drive.VolumeLabel)
-            ? $"({driveName}) 本地磁盘"
-            : $"({driveName}) {drive.VolumeLabel}";
-        AddDirectoryNode(nodes, label, drive.RootDirectory.FullName, DriveNodeImageKey);
-    }
-
-    /// <summary>
-    /// 向目录树加入延迟读取的目录节点。
-    /// </summary>
-    /// <param name="nodes">目标节点集合。</param>
-    /// <param name="label">界面显示名称。</param>
-    /// <param name="directoryPath">目录完整路径。</param>
-    /// <param name="imageKey">节点使用的图标键。</param>
-    private static void AddDirectoryNode(
-        TreeNodeCollection nodes,
-        string label,
-        string directoryPath,
-        string imageKey = FolderNodeImageKey)
-    {
-        var node = new TreeNode(label)
-        {
-            Tag = directoryPath,
-            ImageKey = imageKey,
-            SelectedImageKey = imageKey
-        };
-        node.Nodes.Add(new TreeNode());
-        nodes.Add(node);
-    }
-
-    /// <summary>
     /// 判断文件是否为主窗口支持打开的归档格式。
     /// </summary>
     /// <param name="filePath">待判断的文件路径。</param>
@@ -1208,16 +979,6 @@ public sealed class MainForm : XtraForm, IMainView
         var extension = Path.GetExtension(filePath);
         return string.Equals(extension, ".pak", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(extension, ".wzl", StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
-    /// 判断文件是否为可执行程序，便于在目录树中展示程序图标。
-    /// </summary>
-    /// <param name="filePath">待判断的文件路径。</param>
-    /// <returns>文件扩展名为 EXE 时返回 true。</returns>
-    private static bool IsExecutableFile(string filePath)
-    {
-        return string.Equals(Path.GetExtension(filePath), ".exe", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
