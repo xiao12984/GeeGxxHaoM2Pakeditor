@@ -111,6 +111,13 @@ public sealed class PakImageCodec
             var raw = output.ToArray();
             if (raw.Length != entry.RawSize)
             {
+                if (entry.AllowsRawPayloadTail && raw.Length > entry.RawSize)
+                {
+                    // xiami 的 M2Zip 解码只按 WidthBytes(width) 复制可见像素行；
+                    // 少数老资源的 zlib 流会在后面带额外字节，预览时按参考实现忽略尾部。
+                    return raw.AsSpan(0, entry.RawSize).ToArray();
+                }
+
                 throw new PakFormatException($"图片 {entry.Index} 解压后为 {raw.Length} 字节，预期 {entry.RawSize} 字节。");
             }
 

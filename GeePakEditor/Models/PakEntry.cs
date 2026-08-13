@@ -48,6 +48,10 @@ public sealed class PakEntry
     [ReadOnly(true)]
     public int RawSize { get; internal set; }
 
+    /// <summary>当前块解压后是否允许存在参考实现会忽略的尾部字节。</summary>
+    [Browsable(false)]
+    public bool AllowsRawPayloadTail { get; internal set; }
+
     /// <summary>压缩载荷长度，零表示未压缩。</summary>
     [Browsable(false)]
     public int CompressedSize { get; internal set; }
