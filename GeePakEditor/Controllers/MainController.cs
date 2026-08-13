@@ -16,6 +16,7 @@ public sealed class MainController
     private readonly IMainView _view;
     private readonly IPakArchiveService _archiveService;
     private readonly PakPasswordService _passwordService;
+    private readonly SynchronizationContext _uiContext;
     private PakArchive? _archive;
     private bool _isDirty;
 
@@ -27,6 +28,9 @@ public sealed class MainController
         _view = view;
         _archiveService = archiveService;
         _passwordService = passwordService;
+        _uiContext = SynchronizationContext.Current
+            ?? throw new InvalidOperationException("MainController 必须在 UI 线程上创建。");
+        _view.NewRequested += (_, _) => Execute(CreateNewArchive);
         _view.OpenRequested += (_, _) => Execute(() => OpenArchive());
         _view.ArchivePathOpenRequested += (_, arguments) => Execute(() => OpenArchive(arguments.FilePath));
         _view.SaveRequested += (_, _) => Execute(SaveArchive);
@@ -40,6 +44,60 @@ public sealed class MainController
         _view.ThumbnailsRequested += (_, arguments) => Execute(() => LoadThumbnails(arguments.Entries));
         _view.ClosingRequested += (_, arguments) => ConfirmClosing(arguments);
         _view.UpdateCommandState(false, false, false);
+    }
+
+    /// <summary>
+    /// 新建 PAK 或 WZL/WZX 归档，创建成功后立即绑定到当前编辑窗口。
+    /// </summary>
+    private void CreateNewArchive()
+    {
+        if (_isDirty && !_view.ConfirmDiscardChanges())
+        {
+            return;
+        }
+
+        var settings = _view.PromptNewArchiveSettings();
+        if (settings is null)
+        {
+            return;
+        }
+
+        if (settings.Format == PakArchiveFormat.GeePak3 && string.IsNullOrWhiteSpace(settings.Password))
+        {
+            throw new InvalidOperationException("新建 PAK 必须输入文件密码。");
+        }
+
+        var outputPath = _view.SelectArchiveToCreate(settings);
+        if (string.IsNullOrWhiteSpace(outputPath))
+        {
+            return;
+        }
+
+        var finalStatus = "新建未完成";
+        _view.SetBusy(true, $"正在创建{GetArchiveFormatName(settings.Format)}...");
+        try
+        {
+            var archive = settings.Format == PakArchiveFormat.GeePak3
+                ? _archiveService.CreatePak(outputPath, settings.Password)
+                : _archiveService.CreateWzl(outputPath);
+            _archive = archive;
+            _isDirty = false;
+
+            if (archive.Format == PakArchiveFormat.GeePak3)
+            {
+                // 新建 PAK 的密码落入同目录 FilePassword.txt，保持后续打开时可自动识别。
+                _passwordService.SavePassword(archive.FilePath, archive.Password);
+            }
+
+            _view.BindArchive(archive);
+            _view.UpdateCommandState(true, false, archive.CanWrite);
+            _view.ShowPreview(null);
+            finalStatus = $"已新建{GetArchiveFormatName(archive.Format)}：{archive.FilePath}";
+        }
+        finally
+        {
+            _view.SetBusy(false, finalStatus);
+        }
     }
 
     /// <summary>
@@ -201,7 +259,7 @@ public sealed class MainController
     private void SaveArchiveAs()
     {
         var archive = RequireArchive();
-        var outputPath = _view.SelectArchiveToSave(archive.FilePath);
+        var outputPath = _view.SelectArchiveToSave(archive);
         if (!string.IsNullOrWhiteSpace(outputPath))
         {
             SaveToPath(archive, outputPath);
@@ -333,7 +391,8 @@ public sealed class MainController
     }
 
     /// <summary>
-    /// 按缩略图网格请求解码当前可见资源，并交由视图缓存缩放后的副本。
+    /// 按缩略图网格请求异步解码当前可见资源，并交由视图缓存缩放后的副本。
+    /// 解码和缩放操作在后台线程执行，避免阻塞 UI。
     /// </summary>
     /// <param name="entries">需要生成缩略图的非空资源槽位。</param>
     private void LoadThumbnails(IReadOnlyList<PakEntry> entries)
@@ -343,20 +402,37 @@ public sealed class MainController
             return;
         }
 
-        foreach (var entry in entries.Where(entry => !entry.IsEmpty).GroupBy(entry => entry.Index).Select(group => group.First()))
+        var deduplicatedEntries = entries
+            .Where(entry => !entry.IsEmpty)
+            .GroupBy(entry => entry.Index)
+            .Select(group => group.First())
+            .ToList();
+
+        if (deduplicatedEntries.Count == 0)
         {
-            using var image = _archiveService.DecodeImage(entry);
-            var thumbnail = CreateThumbnail(image);
-            try
-            {
-                _view.ShowThumbnail(entry.Index, thumbnail);
-            }
-            catch
-            {
-                thumbnail.Dispose();
-                throw;
-            }
+            return;
         }
+
+        Task.Run(() =>
+        {
+            foreach (var entry in deduplicatedEntries)
+            {
+                using var image = _archiveService.DecodeImage(entry);
+                var thumbnail = CreateThumbnail(image);
+                _uiContext.Post(_ =>
+                {
+                    try
+                    {
+                        _view.ShowThumbnail(entry.Index, thumbnail);
+                    }
+                    catch
+                    {
+                        thumbnail.Dispose();
+                        throw;
+                    }
+                }, null);
+            }
+        });
     }
 
     /// <summary>
@@ -389,7 +465,7 @@ public sealed class MainController
     private void SaveToPath(PakArchive archive, string outputPath)
     {
         var finalStatus = "保存未完成";
-        _view.SetBusy(true, "正在重建索引并保存 PAK...");
+        _view.SetBusy(true, $"正在重建索引并保存{GetArchiveFormatName(archive.Format)}...");
         try
         {
             _archiveService.Save(archive, outputPath);
@@ -401,6 +477,16 @@ public sealed class MainController
         {
             _view.SetBusy(false, finalStatus);
         }
+    }
+
+    /// <summary>
+    /// 返回面向用户状态栏展示的归档格式名称。
+    /// </summary>
+    /// <param name="format">当前归档格式。</param>
+    /// <returns>中文格式名称。</returns>
+    private static string GetArchiveFormatName(PakArchiveFormat format)
+    {
+        return format == PakArchiveFormat.Wzl ? " WZL/WZX" : " PAK";
     }
 
     /// <summary>

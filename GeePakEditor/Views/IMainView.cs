@@ -11,6 +11,9 @@ public interface IMainView
     /// <summary>用户请求打开归档。</summary>
     event EventHandler? OpenRequested;
 
+    /// <summary>用户请求新建归档。</summary>
+    event EventHandler? NewRequested;
+
     /// <summary>用户从目录树指定归档文件请求打开。</summary>
     event EventHandler<ArchivePathRequestedEventArgs>? ArchivePathOpenRequested;
 
@@ -50,8 +53,14 @@ public interface IMainView
     /// <summary>显示打开 PAK 对话框。</summary>
     string? SelectArchiveToOpen();
 
-    /// <summary>显示另存为对话框。</summary>
-    string? SelectArchiveToSave(string currentPath);
+    /// <summary>显示新建归档设置对话框。</summary>
+    NewArchiveSettings? PromptNewArchiveSettings();
+
+    /// <summary>选择新建归档的保存路径。</summary>
+    string? SelectArchiveToCreate(NewArchiveSettings settings);
+
+    /// <summary>按当前归档格式显示另存为对话框。</summary>
+    string? SelectArchiveToSave(PakArchive archive);
 
     /// <summary>选择一个或多个待导入图片。</summary>
     IReadOnlyList<string> SelectImagesToAdd();

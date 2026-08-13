@@ -26,6 +26,16 @@ internal static class GeePakConstants
     public const int ImageHeaderSize = 16;
 
     /// <summary>
+    /// 传统 WZX 索引文件头部长度。
+    /// </summary>
+    public const int WzxHeaderSize = 48;
+
+    /// <summary>
+    /// 传统 WZL 数据文件头部长度。
+    /// </summary>
+    public const int WzlHeaderSize = 64;
+
+    /// <summary>
     /// 防止损坏文件触发过量内存分配的槽位上限。
     /// </summary>
     public const int MaximumSlotCount = 1_000_000;

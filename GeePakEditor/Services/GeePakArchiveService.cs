@@ -99,6 +99,65 @@ public sealed class GeePakArchiveService : IPakArchiveService
     public PakArchive OpenWzl(string filePath) => _wzlArchiveReader.Open(filePath);
 
     /// <inheritdoc />
+    public PakArchive CreatePak(string filePath, string password)
+    {
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            throw new InvalidOperationException("新建 PAK 必须提供有效密码。");
+        }
+
+        if (!_keyProvider.TryGetProfile(password, out var keyProfile) || keyProfile is null)
+        {
+            throw new PakFormatException($"密码“{password}”未能生成可用的 GEEPAK3 派生密钥，请确认本机派生组件是否可用。");
+        }
+
+        var resolvedPath = Path.GetFullPath(filePath);
+        if (!string.Equals(Path.GetExtension(resolvedPath), ".pak", StringComparison.OrdinalIgnoreCase))
+        {
+            resolvedPath = Path.ChangeExtension(resolvedPath, ".pak");
+        }
+
+        var title = "www.gameofmir.com";
+        var plainHeader = CreateGlobalHeader(title);
+        var archive = new PakArchive
+        {
+            FilePath = resolvedPath,
+            Title = title,
+            Format = PakArchiveFormat.GeePak3,
+            CanWrite = true,
+            Password = password,
+            KeyProfile = keyProfile,
+            ReservedBytes = [0, 0],
+            PlainGlobalHeader = plainHeader,
+            Slots = []
+        };
+
+        // 新建流程立即落盘，确保窗口绑定的归档路径和磁盘文件一致。
+        Save(archive, resolvedPath);
+        return archive;
+    }
+
+    /// <inheritdoc />
+    public PakArchive CreateWzl(string filePath)
+    {
+        var resolvedPath = Path.GetFullPath(filePath);
+        var archive = new PakArchive
+        {
+            FilePath = resolvedPath,
+            Title = "WZL/WZX 可编辑资源",
+            Format = PakArchiveFormat.Wzl,
+            CanWrite = true,
+            WzlHeader = new byte[GeePakConstants.WzlHeaderSize],
+            WzxHeader = new byte[GeePakConstants.WzxHeaderSize],
+            Slots = []
+        };
+
+        // WZL 由数据文件和同名 WZX 索引组成，创建时同步生成两个空文件。
+        Save(archive, resolvedPath);
+        return archive;
+    }
+
+    /// <inheritdoc />
     public Bitmap DecodeImage(PakEntry entry) => _imageCodec.Decode(entry);
 
     /// <inheritdoc />
@@ -144,12 +203,32 @@ public sealed class GeePakArchiveService : IPakArchiveService
     public void Save(PakArchive archive, string outputPath)
     {
         EnsureWritableArchive(archive);
-        var keyProfile = RequireKeyProfile(archive);
         if (archive.Slots.Count > GeePakConstants.MaximumSlotCount)
         {
             throw new InvalidOperationException($"槽位数量超过上限 {GeePakConstants.MaximumSlotCount:N0}。");
         }
 
+        switch (archive.Format)
+        {
+            case PakArchiveFormat.GeePak3:
+                SaveGeePak3(archive, outputPath);
+                break;
+            case PakArchiveFormat.Wzl:
+                SaveWzl(archive, outputPath);
+                break;
+            default:
+                throw new InvalidOperationException($"不支持保存的归档格式：{archive.Format}。");
+        }
+    }
+
+    /// <summary>
+    /// 使用现有 GEEPAK3 加密索引链路保存 PAK。
+    /// </summary>
+    /// <param name="archive">当前内存归档。</param>
+    /// <param name="outputPath">目标 PAK 路径。</param>
+    private void SaveGeePak3(PakArchive archive, string outputPath)
+    {
+        var keyProfile = RequireKeyProfile(archive);
         var resolvedOutputPath = Path.GetFullPath(outputPath);
         var outputDirectory = Path.GetDirectoryName(resolvedOutputPath)
             ?? throw new InvalidOperationException("保存路径没有有效目录。");
@@ -215,6 +294,83 @@ public sealed class GeePakArchiveService : IPakArchiveService
     }
 
     /// <summary>
+    /// 保存传统 WZL 数据文件，并同步重建同名 WZX 偏移索引。
+    /// </summary>
+    /// <param name="archive">当前内存归档。</param>
+    /// <param name="outputPath">目标 WZL 路径。</param>
+    private void SaveWzl(PakArchive archive, string outputPath)
+    {
+        var resolvedWzlPath = Path.GetFullPath(outputPath);
+        if (!string.Equals(Path.GetExtension(resolvedWzlPath), ".wzl", StringComparison.OrdinalIgnoreCase))
+        {
+            resolvedWzlPath = Path.ChangeExtension(resolvedWzlPath, ".wzl");
+        }
+
+        var resolvedWzxPath = ResolveWzxOutputPath(resolvedWzlPath);
+        var outputDirectory = Path.GetDirectoryName(resolvedWzlPath)
+            ?? throw new InvalidOperationException("保存路径没有有效目录。");
+        Directory.CreateDirectory(outputDirectory);
+
+        var temporaryWzlPath = Path.Combine(outputDirectory, $".{Path.GetFileName(resolvedWzlPath)}.{Guid.NewGuid():N}.tmp");
+        var temporaryWzxPath = Path.Combine(outputDirectory, $".{Path.GetFileName(resolvedWzxPath)}.{Guid.NewGuid():N}.tmp");
+        var newOffsets = new uint[archive.Slots.Count];
+
+        try
+        {
+            using (var stream = new FileStream(temporaryWzlPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            using (var writer = new BinaryWriter(stream, Encoding.ASCII, true))
+            {
+                writer.Write(GetSizedHeader(archive.WzlHeader, GeePakConstants.WzlHeaderSize));
+
+                foreach (var entry in archive.Slots)
+                {
+                    if (entry.IsEmpty)
+                    {
+                        continue;
+                    }
+
+                    ValidateEntryForSave(entry);
+                    if (stream.Position > uint.MaxValue)
+                    {
+                        throw new InvalidOperationException("WZL 文件超过 4 GiB 偏移上限。");
+                    }
+
+                    newOffsets[entry.Index] = (uint)stream.Position;
+                    writer.Write(BuildPlainImageHeader(entry));
+                    writer.Write(entry.Payload);
+                }
+
+                writer.Flush();
+                stream.Flush(true);
+            }
+
+            WriteWzxIndex(temporaryWzxPath, archive.WzxHeader, newOffsets);
+            File.Move(temporaryWzlPath, resolvedWzlPath, true);
+            File.Move(temporaryWzxPath, resolvedWzxPath, true);
+
+            archive.FilePath = resolvedWzlPath;
+            for (var index = 0; index < archive.Slots.Count; index++)
+            {
+                archive.Slots[index].Index = index;
+                archive.Slots[index].SourceOffset = newOffsets[index];
+                archive.Slots[index].IsModified = false;
+            }
+        }
+        finally
+        {
+            if (File.Exists(temporaryWzlPath))
+            {
+                File.Delete(temporaryWzlPath);
+            }
+
+            if (File.Exists(temporaryWzxPath))
+            {
+                File.Delete(temporaryWzxPath);
+            }
+        }
+    }
+
+    /// <summary>
     /// 验证文件签名并排除目前没有写回规则的 GEEPAK2。
     /// </summary>
     private static void ValidateSignature(byte[] data)
@@ -241,6 +397,29 @@ public sealed class GeePakArchiveService : IPakArchiveService
             plain[index] = (byte)(data[10 + index] ^ profile.GlobalHeaderKey[index]);
         }
 
+        return plain;
+    }
+
+    /// <summary>
+    /// 创建新 PAK 使用的 256 字节明文全局头，并写入已确认的标题和索引字段。
+    /// </summary>
+    /// <param name="title">GEEPAK3 全局头中允许的资源标题。</param>
+    /// <returns>可交由保存链路加密写入的全局头。</returns>
+    private static byte[] CreateGlobalHeader(string title)
+    {
+        var titleBytes = Encoding.ASCII.GetBytes(title);
+        if (titleBytes.Length is 0 or > 40)
+        {
+            throw new InvalidOperationException("新建 PAK 的全局头标题长度无效。");
+        }
+
+        var plain = new byte[GeePakConstants.GlobalHeaderSize];
+        plain[1] = checked((byte)titleBytes.Length);
+        titleBytes.CopyTo(plain, 2);
+        PakBinary.WriteUInt32(plain, 0x2A, GeePakConstants.HeaderSize);
+        PakBinary.WriteUInt32(plain, 0x2E, 0);
+        PakBinary.WriteUInt32(plain, 0x32, 2);
+        PakBinary.WriteUInt32(plain, 0x36, GeePakConstants.HeaderSize);
         return plain;
     }
 
@@ -429,9 +608,60 @@ public sealed class GeePakArchiveService : IPakArchiveService
     }
 
     /// <summary>
-    /// 生成并加密一个完整的 16 字节图片块头。
+    /// 按 WZL 文件名推导同名 WZX 索引文件路径。
     /// </summary>
-    private static byte[] EncryptImageHeader(PakEntry entry, PakKeyProfile profile)
+    /// <param name="wzlPath">目标 WZL 数据文件路径。</param>
+    /// <returns>同目录同名的 WZX 索引文件路径。</returns>
+    private static string ResolveWzxOutputPath(string wzlPath)
+    {
+        return Path.ChangeExtension(wzlPath, ".wzx");
+    }
+
+    /// <summary>
+    /// 返回固定长度头部；长度不匹配时使用零填充，避免损坏新建文件结构。
+    /// </summary>
+    /// <param name="source">归档中保留的原始头部。</param>
+    /// <param name="length">目标格式要求的头部长度。</param>
+    /// <returns>长度固定的头部副本。</returns>
+    private static byte[] GetSizedHeader(byte[] source, int length)
+    {
+        if (source.Length == length)
+        {
+            return source.ToArray();
+        }
+
+        return new byte[length];
+    }
+
+    /// <summary>
+    /// 写入 WZX 头部和每个逻辑槽位对应的 WZL 数据偏移。
+    /// </summary>
+    /// <param name="wzxPath">临时 WZX 文件路径。</param>
+    /// <param name="header">原始或新建 WZX 头部。</param>
+    /// <param name="offsets">按逻辑槽位排列的 WZL 块偏移。</param>
+    private static void WriteWzxIndex(string wzxPath, byte[] header, IReadOnlyList<uint> offsets)
+    {
+        var writableHeader = GetSizedHeader(header, GeePakConstants.WzxHeaderSize);
+        PakBinary.WriteUInt32(writableHeader, GeePakConstants.WzxHeaderSize - sizeof(uint), checked((uint)offsets.Count));
+
+        using var stream = new FileStream(wzxPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        using var writer = new BinaryWriter(stream, Encoding.ASCII, true);
+        writer.Write(writableHeader);
+        foreach (var offset in offsets)
+        {
+            writer.Write(offset);
+        }
+
+        writer.Flush();
+        stream.Flush(true);
+    }
+
+    /// <summary>
+    /// 生成一个完整的 16 字节明文图片块头，供 WZL 直接写入或 PAK 继续加密。
+    /// </summary>
+    /// <param name="entry">需要保存的图片槽位。</param>
+    /// <returns>已同步尺寸、偏移和压缩长度的明文块头。</returns>
+    private static byte[] BuildPlainImageHeader(PakEntry entry)
     {
         var plain = entry.PlainHeader.Length == GeePakConstants.ImageHeaderSize
             ? entry.PlainHeader.ToArray()
@@ -443,7 +673,15 @@ public sealed class GeePakArchiveService : IPakArchiveService
         PakBinary.WriteInt16(plain, 8, entry.X);
         PakBinary.WriteInt16(plain, 10, entry.Y);
         PakBinary.WriteUInt32(plain, 12, checked((uint)entry.CompressedSize));
+        return plain;
+    }
 
+    /// <summary>
+    /// 生成并加密一个完整的 16 字节图片块头。
+    /// </summary>
+    private static byte[] EncryptImageHeader(PakEntry entry, PakKeyProfile profile)
+    {
+        var plain = BuildPlainImageHeader(entry);
         var encrypted = new byte[plain.Length];
         var keyOffset = entry.Index % 64 * GeePakConstants.ImageHeaderSize;
         for (var byteIndex = 0; byteIndex < encrypted.Length; byteIndex++)
@@ -498,7 +736,7 @@ public sealed class GeePakArchiveService : IPakArchiveService
     {
         if (!archive.CanWrite)
         {
-            throw new InvalidOperationException("传统 WZL/WZX 当前仅支持浏览和导出，不能写回或修改。");
+            throw new InvalidOperationException("当前归档格式不允许写回或修改。");
         }
     }
 

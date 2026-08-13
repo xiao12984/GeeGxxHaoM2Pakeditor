@@ -6,39 +6,36 @@ using GeePakEditor.Utils;
 namespace GeePakEditor.Services;
 
 /// <summary>
-/// 读取传统 WZL 数据文件及同名 WZX 索引文件的只读服务。
+/// 读取传统 WZL 数据文件及同名 WZX 索引文件的服务。
 /// </summary>
 internal sealed class WzlArchiveReader
 {
     /// <summary>
-    /// WZX 文件前 48 字节为保留头，随后是与逻辑索引一一对应的 32 位 WZL 块偏移。
-    /// </summary>
-    private const int WzxHeaderSize = 48;
-
-    /// <summary>
-    /// WZL 文件前 64 字节为保留头，真实图片块从索引偏移处开始。
-    /// </summary>
-    private const int WzlHeaderSize = 64;
-
-    /// <summary>
-    /// 打开 WZL/WZX 只读归档，并转换为现有预览链路可识别的图片槽位。
+    /// 打开 WZL/WZX 归档，并转换为现有预览与编辑链路可识别的图片槽位。
     /// </summary>
     /// <param name="filePath">用户选择的 WZL 文件路径。</param>
-    /// <returns>只读 WZL 归档。</returns>
+    /// <returns>可写 WZL 归档。</returns>
     public PakArchive Open(string filePath)
     {
         var resolvedWzlPath = Path.GetFullPath(filePath);
         var resolvedWzxPath = ResolveWzxPath(resolvedWzlPath);
         var data = File.ReadAllBytes(resolvedWzlPath);
-        var offsets = ReadIndexOffsets(resolvedWzxPath);
-        var slots = ReadSlots(data, offsets);
+        if (data.Length < GeePakConstants.WzlHeaderSize)
+        {
+            throw new PakFormatException("WZL 文件长度小于固定头长度。");
+        }
+
+        var wzxIndex = ReadIndexOffsets(resolvedWzxPath);
+        var slots = ReadSlots(data, wzxIndex.Offsets);
 
         return new PakArchive
         {
             FilePath = resolvedWzlPath,
-            Title = "WZL/WZX 只读资源",
+            Title = "WZL/WZX 可编辑资源",
             Format = PakArchiveFormat.Wzl,
-            CanWrite = false,
+            CanWrite = true,
+            WzlHeader = data.AsSpan(0, GeePakConstants.WzlHeaderSize).ToArray(),
+            WzxHeader = wzxIndex.Header,
             Slots = slots
         };
     }
@@ -70,17 +67,17 @@ internal sealed class WzlArchiveReader
     /// 读取 WZX 头部中的槽位数量，并解析后续偏移表。
     /// </summary>
     /// <param name="wzxPath">WZX 索引文件完整路径。</param>
-    /// <returns>按逻辑索引排列的 WZL 块偏移数组。</returns>
-    private static uint[] ReadIndexOffsets(string wzxPath)
+    /// <returns>WZX 原始头部和按逻辑索引排列的 WZL 块偏移数组。</returns>
+    private static WzxIndex ReadIndexOffsets(string wzxPath)
     {
         var data = File.ReadAllBytes(wzxPath);
-        if (data.Length < WzxHeaderSize || (data.Length - WzxHeaderSize) % sizeof(uint) != 0)
+        if (data.Length < GeePakConstants.WzxHeaderSize || (data.Length - GeePakConstants.WzxHeaderSize) % sizeof(uint) != 0)
         {
             throw new PakFormatException("WZX 索引文件长度无效。");
         }
 
-        var headerSlotCount = PakBinary.ReadUInt32(data, WzxHeaderSize - sizeof(uint));
-        var tableSlotCount = checked((data.Length - WzxHeaderSize) / sizeof(uint));
+        var headerSlotCount = PakBinary.ReadUInt32(data, GeePakConstants.WzxHeaderSize - sizeof(uint));
+        var tableSlotCount = checked((data.Length - GeePakConstants.WzxHeaderSize) / sizeof(uint));
         if (headerSlotCount != checked((uint)tableSlotCount))
         {
             throw new PakFormatException($"WZX 索引数量不一致：头部={headerSlotCount}, 表={tableSlotCount}。");
@@ -94,10 +91,10 @@ internal sealed class WzlArchiveReader
         var offsets = new uint[tableSlotCount];
         for (var index = 0; index < offsets.Length; index++)
         {
-            offsets[index] = PakBinary.ReadUInt32(data, WzxHeaderSize + index * sizeof(uint));
+            offsets[index] = PakBinary.ReadUInt32(data, GeePakConstants.WzxHeaderSize + index * sizeof(uint));
         }
 
-        return offsets;
+        return new WzxIndex(offsets, data.AsSpan(0, GeePakConstants.WzxHeaderSize).ToArray());
     }
 
     /// <summary>
@@ -108,7 +105,7 @@ internal sealed class WzlArchiveReader
     /// <returns>按逻辑索引排列的图片槽位。</returns>
     private static List<PakEntry> ReadSlots(byte[] data, IReadOnlyList<uint> offsets)
     {
-        if (data.Length < WzlHeaderSize)
+        if (data.Length < GeePakConstants.WzlHeaderSize)
         {
             throw new PakFormatException("WZL 文件长度小于固定头长度。");
         }
@@ -123,7 +120,7 @@ internal sealed class WzlArchiveReader
                 continue;
             }
 
-            if (offset < WzlHeaderSize || offset > data.Length - GeePakConstants.ImageHeaderSize)
+            if (offset < GeePakConstants.WzlHeaderSize || offset > data.Length - GeePakConstants.ImageHeaderSize)
             {
                 throw new PakFormatException($"WZL 图片 {index} 的块头偏移 {offset} 越界。");
             }
@@ -245,4 +242,11 @@ internal sealed class WzlArchiveReader
             IsModified = false
         };
     }
+
+    /// <summary>
+    /// 已读取的 WZX 偏移表和原始头部。
+    /// </summary>
+    /// <param name="Offsets">按逻辑槽位排列的 WZL 图片块偏移。</param>
+    /// <param name="Header">WZX 文件前 48 字节头部。</param>
+    private sealed record WzxIndex(uint[] Offsets, byte[] Header);
 }

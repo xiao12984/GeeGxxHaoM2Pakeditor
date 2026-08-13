@@ -16,6 +16,12 @@ internal sealed class CheckerboardPreviewControl : ScrollableControl
     private static readonly Color DarkSquareColor = Color.FromArgb(225, 225, 225);
 
     /// <summary>
+    /// 预缓存的棋盘格画刷。
+    /// </summary>
+    private static readonly SolidBrush LightSquareBrush = new(LightSquareColor);
+    private static readonly SolidBrush DarkSquareBrush = new(DarkSquareColor);
+
+    /// <summary>
     /// 当前由主窗口托管和释放的预览图片。
     /// </summary>
     private Image? _image;
@@ -170,8 +176,7 @@ internal sealed class CheckerboardPreviewControl : ScrollableControl
             {
                 var columnIndex = (column - bounds.Left) / squareSize;
                 var rowIndex = (row - bounds.Top) / squareSize;
-                var color = (columnIndex + rowIndex) % 2 == 0 ? LightSquareColor : DarkSquareColor;
-                using var brush = new SolidBrush(color);
+                var brush = (columnIndex + rowIndex) % 2 == 0 ? LightSquareBrush : DarkSquareBrush;
                 graphics.FillRectangle(
                     brush,
                     column,

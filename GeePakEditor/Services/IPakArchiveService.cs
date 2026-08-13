@@ -17,8 +17,14 @@ public interface IPakArchiveService
     /// <summary>打开并验证一个 GEEPAK3 文件。</summary>
     PakArchive Open(string filePath, string password);
 
-    /// <summary>只读打开传统 WZL 数据文件及同名 WZX 索引文件。</summary>
+    /// <summary>打开传统 WZL 数据文件及同名 WZX 索引文件。</summary>
     PakArchive OpenWzl(string filePath);
+
+    /// <summary>创建并写入一个空的 GEEPAK3 归档。</summary>
+    PakArchive CreatePak(string filePath, string password);
+
+    /// <summary>创建并写入一个空的传统 WZL/WZX 归档。</summary>
+    PakArchive CreateWzl(string filePath);
 
     /// <summary>解码一个非空图片槽位。</summary>
     Bitmap DecodeImage(PakEntry entry);
@@ -35,6 +41,6 @@ public interface IPakArchiveService
     /// <summary>把指定槽位导出为 PNG。</summary>
     void ExportImage(PakEntry entry, string outputPath);
 
-    /// <summary>将当前编辑状态保存为 GEEPAK3 文件。</summary>
+    /// <summary>将当前编辑状态按归档格式保存到磁盘。</summary>
     void Save(PakArchive archive, string outputPath);
 }

@@ -14,7 +14,7 @@ public sealed class PakArchive
     /// <summary>当前归档的实际文件格式。</summary>
     public PakArchiveFormat Format { get; init; } = PakArchiveFormat.GeePak3;
 
-    /// <summary>当前归档是否允许通过现有 GEEPAK3 写回链路修改。</summary>
+    /// <summary>当前归档是否允许通过对应格式写回链路修改。</summary>
     public bool CanWrite { get; init; } = true;
 
     /// <summary>打开归档时使用的密码。</summary>
@@ -28,6 +28,12 @@ public sealed class PakArchive
 
     /// <summary>解密后的 256 字节全局头，用于保留未知字段。</summary>
     public byte[] PlainGlobalHeader { get; init; } = [];
+
+    /// <summary>WZL 文件前 64 字节头部，用于保存时保留未知字段。</summary>
+    public byte[] WzlHeader { get; init; } = [];
+
+    /// <summary>WZX 文件前 48 字节头部，用于保存时保留未知字段。</summary>
+    public byte[] WzxHeader { get; init; } = [];
 
     /// <summary>按逻辑索引排列的全部槽位。</summary>
     public required List<PakEntry> Slots { get; init; }

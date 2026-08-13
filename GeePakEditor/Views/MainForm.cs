@@ -63,8 +63,14 @@ public sealed class MainForm : XtraForm, IMainView
     private static readonly Color StatusBarBackgroundColor = Color.FromArgb(240, 240, 240);
 
     /// <summary>
+    /// 预缓存的边框画笔，避免 Paint 事件重复创建。
+    /// </summary>
+    private static readonly Pen BorderPen = new(BorderColor, 1F);
+
+    /// <summary>
     /// 顶部命令区按钮。
     /// </summary>
+    private readonly SimpleButton _newButton;
     private readonly SimpleButton _openButton;
     private readonly SimpleButton _saveButton;
     private readonly SimpleButton _saveAsButton;
@@ -103,7 +109,7 @@ public sealed class MainForm : XtraForm, IMainView
     private bool _isSynchronizingMetadata;
 
     /// <summary>
-    /// 当前归档是否允许编辑和写回，用于限制只读 WZL 资源的命令状态。
+    /// 当前归档是否允许编辑和写回，用于限制不可写资源的命令状态。
     /// </summary>
     private bool _canWriteArchive;
 
@@ -130,6 +136,7 @@ public sealed class MainForm : XtraForm, IMainView
         KeyPreview = true;
         Appearance.BackColor = PanelBackgroundColor;
 
+        _newButton = CreateCommandButton("新建", "New;Size16x16");
         _openButton = CreateCommandButton("打开", "Open;Size16x16");
         _saveButton = CreateCommandButton("保存", "Save;Size16x16");
         _saveAsButton = CreateCommandButton("另存为", "SaveAs;Size16x16");
@@ -202,6 +209,9 @@ public sealed class MainForm : XtraForm, IMainView
     public event EventHandler? OpenRequested;
 
     /// <inheritdoc />
+    public event EventHandler? NewRequested;
+
+    /// <inheritdoc />
     public event EventHandler<ArchivePathRequestedEventArgs>? ArchivePathOpenRequested;
 
     /// <inheritdoc />
@@ -251,18 +261,65 @@ public sealed class MainForm : XtraForm, IMainView
     }
 
     /// <inheritdoc />
-    public string? SelectArchiveToSave(string currentPath)
+    public NewArchiveSettings? PromptNewArchiveSettings()
     {
-        using var dialog = new XtraSaveFileDialog
-        {
-            Title = "另存 GEEPAK3",
-            Filter = "GEEPAK3 文件 (*.pak)|*.pak|所有文件 (*.*)|*.*",
-            FileName = Path.GetFileName(currentPath),
-            InitialDirectory = Path.GetDirectoryName(currentPath),
-            AddExtension = true,
-            DefaultExt = "pak"
-        };
+        using var dialog = new NewArchiveDialog();
+        return dialog.ShowDialog(this) == DialogResult.OK ? dialog.Settings : null;
+    }
+
+    /// <inheritdoc />
+    public string? SelectArchiveToCreate(NewArchiveSettings settings)
+    {
+        using var dialog = CreateArchiveSaveDialog(
+            settings.Format,
+            settings.Format == PakArchiveFormat.GeePak3 ? "新建 GEEPAK3" : "新建 WZL/WZX",
+            settings.Format == PakArchiveFormat.GeePak3 ? "新建.pak" : "新建.wzl");
         return dialog.ShowDialog(this) == DialogResult.OK ? dialog.FileName : null;
+    }
+
+    /// <inheritdoc />
+    public string? SelectArchiveToSave(PakArchive archive)
+    {
+        using var dialog = CreateArchiveSaveDialog(
+            archive.Format,
+            archive.Format == PakArchiveFormat.GeePak3 ? "另存 GEEPAK3" : "另存 WZL/WZX",
+            Path.GetFileName(archive.FilePath));
+        dialog.InitialDirectory = Path.GetDirectoryName(archive.FilePath);
+        return dialog.ShowDialog(this) == DialogResult.OK ? dialog.FileName : null;
+    }
+
+    /// <summary>
+    /// 按归档格式创建统一的保存路径对话框，避免 PAK/WZL 使用错误扩展名。
+    /// </summary>
+    /// <param name="format">目标归档格式。</param>
+    /// <param name="title">对话框标题。</param>
+    /// <param name="fileName">初始文件名。</param>
+    /// <returns>已配置过滤器和默认扩展名的保存对话框。</returns>
+    private static XtraSaveFileDialog CreateArchiveSaveDialog(PakArchiveFormat format, string title, string fileName)
+    {
+        var defaultExtension = format == PakArchiveFormat.Wzl ? "wzl" : "pak";
+        return new XtraSaveFileDialog
+        {
+            Title = title,
+            Filter = format == PakArchiveFormat.Wzl
+                ? "WZL 文件 (*.wzl)|*.wzl|所有文件 (*.*)|*.*"
+                : "GEEPAK3 文件 (*.pak)|*.pak|所有文件 (*.*)|*.*",
+            FileName = NormalizeArchiveFileName(fileName, defaultExtension),
+            AddExtension = true,
+            DefaultExt = defaultExtension,
+            OverwritePrompt = true
+        };
+    }
+
+    /// <summary>
+    /// 修正初始文件名扩展，确保新建和另存不会默认生成错误格式。
+    /// </summary>
+    /// <param name="fileName">用户当前文件名或默认文件名。</param>
+    /// <param name="extension">不带点号的目标扩展名。</param>
+    /// <returns>带目标扩展名的文件名。</returns>
+    private static string NormalizeArchiveFileName(string fileName, string extension)
+    {
+        return Path.ChangeExtension(string.IsNullOrWhiteSpace(fileName) ? $"新建.{extension}" : fileName, extension);
     }
 
     /// <inheritdoc />
@@ -445,8 +502,7 @@ public sealed class MainForm : XtraForm, IMainView
         };
         header.Paint += (_, e) =>
         {
-            using var pen = new Pen(BorderColor, 1F);
-            e.Graphics.DrawLine(pen, 0, header.Height - 1, header.Width, header.Height - 1);
+            e.Graphics.DrawLine(BorderPen, 0, header.Height - 1, header.Width, header.Height - 1);
         };
 
         // 顶部区域仅承载命令栏，避免品牌说明占据左侧固定宽度。
@@ -685,8 +741,7 @@ public sealed class MainForm : XtraForm, IMainView
         };
         leftPanel.Paint += (_, e) =>
         {
-            using var pen = new Pen(BorderColor);
-            e.Graphics.DrawLine(pen, leftPanel.Width - 1, 0, leftPanel.Width - 1, leftPanel.Height);
+            e.Graphics.DrawLine(BorderPen, leftPanel.Width - 1, 0, leftPanel.Width - 1, leftPanel.Height);
         };
         leftPanel.Controls.Add(_directoryTree);
 
@@ -703,8 +758,7 @@ public sealed class MainForm : XtraForm, IMainView
         };
         previewPanel.Paint += (_, e) =>
         {
-            using var pen = new Pen(BorderColor);
-            e.Graphics.DrawLine(pen, 0, previewPanel.Height - 1, previewPanel.Width, previewPanel.Height - 1);
+            e.Graphics.DrawLine(BorderPen, 0, previewPanel.Height - 1, previewPanel.Width, previewPanel.Height - 1);
         };
         previewPanel.Controls.Add(_previewControl);
 
@@ -754,6 +808,7 @@ public sealed class MainForm : XtraForm, IMainView
         };
 
         // 第一个按钮组从左侧直接开始，移除品牌区后不再保留额外占位。
+        buttonFlow.Controls.Add(_newButton);
         buttonFlow.Controls.Add(_openButton);
         buttonFlow.Controls.Add(_saveButton);
         buttonFlow.Controls.Add(_saveAsButton);
@@ -798,8 +853,7 @@ public sealed class MainForm : XtraForm, IMainView
         };
         panel.Paint += (_, e) =>
         {
-            using var pen = new Pen(BorderColor);
-            e.Graphics.DrawLine(pen, 0, 0, panel.Width, 0);
+            e.Graphics.DrawLine(BorderPen, 0, 0, panel.Width, 0);
         };
 
         // 右侧偏移编辑器
@@ -852,6 +906,7 @@ public sealed class MainForm : XtraForm, IMainView
     /// </summary>
     private void BindEvents()
     {
+        _newButton.Click += (_, _) => NewRequested?.Invoke(this, EventArgs.Empty);
         _openButton.Click += (_, _) => OpenRequested?.Invoke(this, EventArgs.Empty);
         _saveButton.Click += (_, _) => SaveRequested?.Invoke(this, EventArgs.Empty);
         _saveAsButton.Click += (_, _) => SaveAsRequested?.Invoke(this, EventArgs.Empty);
@@ -899,10 +954,37 @@ public sealed class MainForm : XtraForm, IMainView
             // 库节点暂不承载业务命令，仅作为资源管理器式导航分组占位。
             _directoryTree.Nodes.Add(computerNode);
             _directoryTree.Nodes.Add(libraryNode);
-            foreach (var drive in DriveInfo.GetDrives().Where(drive => drive.IsReady))
+
+            Task.Run(() =>
             {
-                AddDriveNode(_directoryTree.Nodes, drive);
-            }
+                var drives = DriveInfo.GetDrives()
+                    .Where(drive => drive.IsReady)
+                    .Select(drive =>
+                    {
+                        var driveName = drive.Name.TrimEnd(Path.DirectorySeparatorChar);
+                        var label = string.IsNullOrWhiteSpace(drive.VolumeLabel)
+                            ? $"({driveName}) 本地磁盘"
+                            : $"({driveName}) {drive.VolumeLabel}";
+                        return (label, path: drive.RootDirectory.FullName);
+                    })
+                    .ToList();
+
+                BeginInvoke(() =>
+                {
+                    _directoryTree.BeginUpdate();
+                    try
+                    {
+                        foreach (var (label, path) in drives)
+                        {
+                            AddDirectoryNode(_directoryTree.Nodes, label, path, DriveNodeImageKey);
+                        }
+                    }
+                    finally
+                    {
+                        _directoryTree.EndUpdate();
+                    }
+                });
+            });
         }
         finally
         {
@@ -911,7 +993,7 @@ public sealed class MainForm : XtraForm, IMainView
     }
 
     /// <summary>
-    /// 首次展开目录时按需读取子目录和可打开的归档文件。
+    /// 首次展开目录时异步读取子目录和可打开的归档文件，避免大量文件枚举阻塞 UI。
     /// </summary>
     /// <param name="sender">事件来源。</param>
     /// <param name="e">即将展开的目录树节点。</param>
@@ -925,7 +1007,70 @@ public sealed class MainForm : XtraForm, IMainView
 
         if (node.Nodes.Count == 1 && node.Nodes[0].Tag is null)
         {
-            PopulateDirectoryNode(node, directoryPath);
+            // 清除占位节点，添加加载提示
+            node.Nodes.Clear();
+            node.Nodes.Add(new TreeNode("加载中..."));
+
+            Task.Run(() =>
+            {
+                var items = new List<(string Name, string Path, string ImageKey, string SelectedImageKey)>();
+                try
+                {
+                    foreach (var childDirectory in Directory.EnumerateDirectories(directoryPath)
+                                 .OrderBy(p => Path.GetFileName(p), StringComparer.OrdinalIgnoreCase))
+                    {
+                        items.Add((Path.GetFileName(childDirectory), childDirectory,
+                            FolderNodeImageKey, FolderNodeImageKey));
+                    }
+
+                    foreach (var archivePath in Directory.EnumerateFiles(directoryPath)
+                                 .Where(IsArchiveFile)
+                                 .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
+                    {
+                        items.Add((Path.GetFileName(archivePath), archivePath,
+                            ArchiveNodeImageKey, ArchiveNodeImageKey));
+                    }
+
+                    foreach (var executablePath in Directory.EnumerateFiles(directoryPath)
+                                 .Where(IsExecutableFile)
+                                 .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase))
+                    {
+                        items.Add((Path.GetFileName(executablePath), executablePath,
+                            ExeNodeImageKey, ExeNodeImageKey));
+                    }
+                }
+                catch (UnauthorizedAccessException) { }
+                catch (IOException) { }
+
+                BeginInvoke(() =>
+                {
+                    _directoryTree.BeginUpdate();
+                    try
+                    {
+                        node.Nodes.Clear();
+                        foreach (var (name, path, imageKey, selectedImageKey) in items)
+                        {
+                            if (imageKey == FolderNodeImageKey)
+                            {
+                                AddDirectoryNode(node.Nodes, name, path);
+                            }
+                            else
+                            {
+                                node.Nodes.Add(new TreeNode(name)
+                                {
+                                    Tag = path,
+                                    ImageKey = imageKey,
+                                    SelectedImageKey = selectedImageKey
+                                });
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        _directoryTree.EndUpdate();
+                    }
+                });
+            });
         }
     }
 
@@ -1120,7 +1265,12 @@ public sealed class MainForm : XtraForm, IMainView
     /// <param name="e">按键参数。</param>
     private void OnShortcutKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Control && e.KeyCode == Keys.O)
+        if (e.Control && e.KeyCode == Keys.N)
+        {
+            NewRequested?.Invoke(this, EventArgs.Empty);
+            e.SuppressKeyPress = true;
+        }
+        else if (e.Control && e.KeyCode == Keys.O)
         {
             OpenRequested?.Invoke(this, EventArgs.Empty);
             e.SuppressKeyPress = true;
