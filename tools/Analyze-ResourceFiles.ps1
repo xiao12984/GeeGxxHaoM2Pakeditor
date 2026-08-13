@@ -11,7 +11,10 @@ param(
     [string]$CsvPath,
 
     # 只显示异常、未配对或尚未实现专用 Reader 的文件。
-    [switch]$OnlyProblems
+    [switch]$OnlyProblems,
+
+    # 每个文件最多写入多少条明细问题，避免大资源报告过度膨胀。
+    [int]$MaxIssueDetails = 20
 )
 
 Set-StrictMode -Version Latest
@@ -21,6 +24,7 @@ $script:WzxHeaderSize = 48
 $script:WzlHeaderSize = 64
 $script:ImageHeaderSize = 16
 $script:MaximumSlotCount = 1000000
+$script:MaxIssueDetails = [Math]::Max(1, $MaxIssueDetails)
 
 function Read-UInt16LE {
     param(
@@ -105,9 +109,25 @@ function Test-ZlibHeader {
         return $false
     }
 
-    $cmf = $Bytes[[int]$Offset]
-    $flg = $Bytes[[int]$Offset + 1]
+    # PowerShell 对 byte 直接左移可能保留 byte 宽度，先转成 int 才能正确验证 78 DA 这类合法 zlib 头。
+    $cmf = [int]$Bytes[[int]$Offset]
+    $flg = [int]$Bytes[[int]$Offset + 1]
     return (($cmf -band 0x0F) -eq 8) -and ((($cmf -shl 8) + $flg) % 31 -eq 0)
+}
+
+function Add-LimitedIssue {
+    param(
+        [System.Collections.Generic.List[string]]$Issues,
+        [string]$Message,
+        [ref]$SuppressedCount
+    )
+
+    if ($Issues.Count -lt $script:MaxIssueDetails) {
+        $Issues.Add($Message)
+        return
+    }
+
+    $SuppressedCount.Value++
 }
 
 function Resolve-SiblingFile {
@@ -141,6 +161,7 @@ function New-Result {
         [int]$ValidBlocks = 0,
         [int]$InvalidBlocks = 0,
         [int]$DuplicateRefs = 0,
+        [int]$ExtraIndexEntries = 0,
         [string]$Encodes = '',
         [long]$DataBytes = 0,
         [long]$IndexBytes = 0,
@@ -159,6 +180,7 @@ function New-Result {
         ValidBlocks   = $ValidBlocks
         InvalidBlocks = $InvalidBlocks
         DuplicateRefs = $DuplicateRefs
+        ExtraIndexEntries = $ExtraIndexEntries
         Encodes       = $Encodes
         DataBytes     = $DataBytes
         IndexBytes    = $IndexBytes
@@ -188,6 +210,8 @@ function Analyze-WzlPair {
     $invalidBlocks = 0
     $emptySlots = 0
     $duplicateRefs = 0
+    $extraIndexEntries = 0
+    $suppressedIssueCount = 0
     $physicalBlocks = @{}
     $blockTypes = New-Object 'System.Collections.Generic.HashSet[string]'
     $wzlBytes = [System.IO.File]::ReadAllBytes($WzlFile.FullName)
@@ -203,18 +227,24 @@ function Analyze-WzlPair {
             throw 'WZX 文件长度无效，48 字节头后必须是完整的 UInt32 偏移表。'
         }
 
-        $headerSlotCount = [int](Read-UInt32LE -Bytes $wzxBytes -Offset 44)
-        $tableSlotCount = [int](($wzxBytes.Length - $script:WzxHeaderSize) / 4)
-        if ($headerSlotCount -ne $tableSlotCount) {
-            throw "WZX 槽位数量不一致：头部=$headerSlotCount，实际表项=$tableSlotCount。"
+        $headerSlotCount = [long](Read-UInt32LE -Bytes $wzxBytes -Offset 44)
+        $tableSlotCount = [long](($wzxBytes.Length - $script:WzxHeaderSize) / 4)
+        if ($headerSlotCount -gt $tableSlotCount) {
+            throw "WZX 偏移表不完整：头部声明=$headerSlotCount，实际表项=$tableSlotCount。"
         }
 
-        if ($tableSlotCount -gt $script:MaximumSlotCount) {
+        if ($headerSlotCount -gt $script:MaximumSlotCount) {
             throw "WZX 槽位数量超过上限 $($script:MaximumSlotCount)。"
         }
 
+        if ($headerSlotCount -lt $tableSlotCount) {
+            $extraIndexEntries = [int]($tableSlotCount - $headerSlotCount)
+            $issues.Add("WZX 文件尾部存在 $extraIndexEntries 个额外偏移表项；已按 xiami 的 IndexCount 只读取前 $headerSlotCount 项。")
+        }
+
+        $slotCount = [int]$headerSlotCount
         $offsets = New-Object 'System.Collections.Generic.List[uint]'
-        for ($index = 0; $index -lt $tableSlotCount; $index++) {
+        for ($index = 0; $index -lt $slotCount; $index++) {
             $offset = Read-UInt32LE -Bytes $wzxBytes -Offset ($script:WzxHeaderSize + $index * 4)
             $offsets.Add($offset)
 
@@ -232,7 +262,10 @@ function Analyze-WzlPair {
             if ($offset -lt $script:WzlHeaderSize -or
                 [long]$offset + $script:ImageHeaderSize -gt $wzlBytes.Length) {
                 $invalidBlocks++
-                $issues.Add("槽位 $index 的块偏移 $offset 越界。")
+                Add-LimitedIssue `
+                    -Issues $issues `
+                    -Message "槽位 $index 的块偏移 $offset 越界。" `
+                    -SuppressedCount ([ref]$suppressedIssueCount)
                 continue
             }
 
@@ -309,8 +342,15 @@ function Analyze-WzlPair {
             }
             else {
                 $invalidBlocks++
-                $issues.Add("块偏移 $($block.Offset)：$($blockIssues -join '、')")
+                Add-LimitedIssue `
+                    -Issues $issues `
+                    -Message "块偏移 $($block.Offset)：$($blockIssues -join '、')" `
+                    -SuppressedCount ([ref]$suppressedIssueCount)
             }
+        }
+
+        if ($suppressedIssueCount -gt 0) {
+            $issues.Add("另有 $suppressedIssueCount 条明细问题已省略；请结合 InvalidBlocks、Encodes 和前几条问题定位。")
         }
 
         $encodes = (@($blockTypes | Sort-Object) -join ',')
@@ -355,12 +395,13 @@ function Analyze-WzlPair {
             -Family $family `
             -Status $status `
             -Confidence $confidence `
-            -Slots $tableSlotCount `
+            -Slots $slotCount `
             -EmptySlots $emptySlots `
             -Blocks $blocks `
             -ValidBlocks $validBlocks `
             -InvalidBlocks $invalidBlocks `
             -DuplicateRefs $duplicateRefs `
+            -ExtraIndexEntries $extraIndexEntries `
             -Encodes $encodes `
             -DataBytes $wzlBytes.Length `
             -IndexBytes $wzxBytes.Length `
@@ -378,6 +419,7 @@ function Analyze-WzlPair {
             -ValidBlocks $validBlocks `
             -InvalidBlocks $invalidBlocks `
             -DuplicateRefs $duplicateRefs `
+            -ExtraIndexEntries $extraIndexEntries `
             -DataBytes $wzlBytes.Length `
             -IndexBytes $wzxBytes.Length `
             -Issues $_.Exception.Message
