@@ -9,29 +9,29 @@ namespace GeePakEditor.Views;
 internal sealed class ThumbnailGridControl : ScrollableControl
 {
     /// <summary>
-    /// 每个资源格的固定宽度。
+    /// 每个资源格的固定宽度，参考 LibraryEditor 的紧凑预览节奏收窄。
     /// </summary>
-    private const int CellWidth = 104;
+    private const int CellWidth = 80;
 
     /// <summary>
-    /// 每个资源格的固定高度，底部预留索引文本空间。
+    /// 每个资源格的固定高度，保留索引与格式标签的同时压缩整体高度。
     /// </summary>
-    private const int CellHeight = 108;
+    private const int CellHeight = 84;
 
     /// <summary>
-    /// 单元格之间的间距。
+    /// 单元格之间的间距，压缩为更接近 LibraryEditor 的密度。
     /// </summary>
-    private const int CellMargin = 4;
+    private const int CellMargin = 2;
 
     /// <summary>
-    /// 资源格内缩略图的边距。
+    /// 资源格内缩略图的边距，避免小格子里图像贴边。
     /// </summary>
-    private const int ThumbnailPadding = 8;
+    private const int ThumbnailPadding = 4;
 
     /// <summary>
-    /// 单元格圆角半径。
+    /// 单元格圆角半径，随格子尺寸同步收紧。
     /// </summary>
-    private const int CornerRadius = 6;
+    private const int CornerRadius = 4;
 
     /// <summary>
     /// 现代主题配色。
@@ -65,8 +65,8 @@ internal sealed class ThumbnailGridControl : ScrollableControl
     /// <summary>
     /// 预缓存的字体。
     /// </summary>
-    private static readonly Font LoadingFont = new("Microsoft YaHei UI", 7F);
-    private static readonly Font FormatFont = new("Microsoft YaHei UI", 6.5F);
+    private static readonly Font LoadingFont = new("Microsoft YaHei UI", 6F);
+    private static readonly Font FormatFont = new("Microsoft YaHei UI", 5.75F);
 
     /// <summary>
     /// 格式标签预缓存画刷。
@@ -130,7 +130,8 @@ internal sealed class ThumbnailGridControl : ScrollableControl
         BackColor = Color.White;
         DoubleBuffered = true;
         TabStop = true;
-        Font = new Font("Microsoft YaHei UI", 8.5F);
+        // 索引文字保持清晰，但整体字号略收紧以适配更小的资源格。
+        Font = new Font("Microsoft YaHei UI", 7.5F);
     }
 
     /// <summary>
@@ -520,12 +521,12 @@ internal sealed class ThumbnailGridControl : ScrollableControl
         var borderPen = selected ? SelectedBorderPen : CellBorderPenValue;
         graphics.DrawPath(borderPen, path);
 
-        // 绘制缩略图区域
+        // 绘制缩略图区域，按更紧凑的格子重新分配可视面积。
         var thumbnailArea = new Rectangle(
             drawBounds.Left + ThumbnailPadding,
             drawBounds.Top + ThumbnailPadding,
             drawBounds.Width - (ThumbnailPadding * 2),
-            drawBounds.Height - 32);
+            drawBounds.Height - 24);
 
         // 缩略图背景
         using var thumbPath = GetRoundedRectangle(thumbnailArea, 3);
@@ -559,10 +560,10 @@ internal sealed class ThumbnailGridControl : ScrollableControl
 
         // 绘制索引标签
         var textBounds = new Rectangle(
-            drawBounds.Left + 4,
-            drawBounds.Bottom - 22,
-            drawBounds.Width - 8,
-            20);
+            drawBounds.Left + 3,
+            drawBounds.Bottom - 16,
+            drawBounds.Width - 6,
+            14);
         var textColor = selected ? SelectedTextColor : TextColor;
         TextRenderer.DrawText(
             graphics,
@@ -578,10 +579,10 @@ internal sealed class ThumbnailGridControl : ScrollableControl
             var formatText = entry.FormatText;
             var formatSize = TextRenderer.MeasureText(graphics, formatText, FormatFont);
             var formatBounds = new Rectangle(
-                drawBounds.Left + 4,
-                drawBounds.Top + 4,
-                formatSize.Width + 6,
-                formatSize.Height + 2);
+                drawBounds.Left + 3,
+                drawBounds.Top + 3,
+                formatSize.Width + 4,
+                formatSize.Height + 1);
             using var formatPath = GetRoundedRectangle(formatBounds, 2);
             var formatBg = selected ? FormatBgSelectedBrush : FormatBgBrush;
             graphics.FillPath(formatBg, formatPath);
