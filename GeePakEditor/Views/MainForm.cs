@@ -485,9 +485,9 @@ public sealed class MainForm : XtraForm, IMainView
     }
 
     /// <inheritdoc />
-    public void ShowThumbnail(int index, Image thumbnail)
+    public void ShowThumbnail(int index, PakEntry entry, Image thumbnail)
     {
-        _thumbnailGrid.SetThumbnail(index, thumbnail);
+        _thumbnailGrid.SetThumbnail(index, entry, thumbnail);
     }
 
     /// <inheritdoc />
@@ -508,9 +508,9 @@ public sealed class MainForm : XtraForm, IMainView
     }
 
     /// <inheritdoc />
-    public void ResetThumbnailRequest(int index)
+    public bool ResetThumbnailRequest(int index, PakEntry entry)
     {
-        _thumbnailGrid.ResetThumbnailRequest(index);
+        return _thumbnailGrid.ResetThumbnailRequest(index, entry);
     }
 
     /// <inheritdoc />

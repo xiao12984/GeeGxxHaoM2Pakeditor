@@ -99,13 +99,16 @@ public interface IMainView
     void ShowPreview(Image? image);
 
     /// <summary>向缩略图网格交付单个图片；窗口接管该图片的释放责任。</summary>
-    void ShowThumbnail(int index, Image thumbnail);
+    /// <param name="entry">生成该缩略图时对应的资源对象，用于丢弃过期任务结果。</param>
+    void ShowThumbnail(int index, PakEntry entry, Image thumbnail);
 
     /// <summary>把界面更新切回主窗口线程执行。</summary>
     void InvokeOnUi(Action action);
 
-    /// <summary>清除失败缩略图的请求标记，使资源重新进入视口时可以重试。</summary>
-    void ResetThumbnailRequest(int index);
+    /// <summary>清除指定资源对象的失败请求标记，使其重新进入视口时可以重试。</summary>
+    /// <param name="index">资源逻辑索引。</param>
+    /// <param name="entry">发起请求时对应的资源对象，用于忽略过期任务。</param>
+    bool ResetThumbnailRequest(int index, PakEntry entry);
 
     /// <summary>设置忙碌状态与底部状态文本。</summary>
     void SetBusy(bool busy, string statusText);

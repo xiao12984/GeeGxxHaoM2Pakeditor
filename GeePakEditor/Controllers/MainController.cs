@@ -445,6 +445,7 @@ public sealed class MainController
             return;
         }
 
+        var archive = _archive;
         var deduplicatedEntries = entries
             .Where(entry => !entry.IsEmpty)
             .GroupBy(entry => entry.Index)
@@ -458,7 +459,14 @@ public sealed class MainController
 
         Task.Run(() =>
         {
-            foreach (var entry in deduplicatedEntries)
+            // 参考 LibraryEditor 会在图库对象层面准备好图片后再提供预览；
+            // 这里保留视口懒加载以控制内存，但对当前批次使用有界并行，避免缩略图按索引串行排队。
+            var options = new ParallelOptions
+            {
+                MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount, 1, 4)
+            };
+
+            Parallel.ForEach(deduplicatedEntries, options, entry =>
             {
                 try
                 {
@@ -468,7 +476,14 @@ public sealed class MainController
                     {
                         try
                         {
-                            _view.ShowThumbnail(entry.Index, thumbnail);
+                            // 归档或槽位已被替换时丢弃旧任务结果，避免旧缩略图覆盖新缓存。
+                            if (!ReferenceEquals(_archive, archive))
+                            {
+                                thumbnail.Dispose();
+                                return;
+                            }
+
+                            _view.ShowThumbnail(entry.Index, entry, thumbnail);
                         }
                         catch
                         {
@@ -482,11 +497,19 @@ public sealed class MainController
                     // 单个 WZL 资源解码失败时只跳过当前缩略图，避免中断同一批次的其他资源。
                     _view.InvokeOnUi(() =>
                     {
-                        _view.ResetThumbnailRequest(entry.Index);
-                        _view.SetStatus($"缩略图索引 {entry.Index} 加载失败：{exception.Message}");
+                        // 失败回调同样必须绑定原始资源对象，避免旧归档污染新归档的同索引请求状态。
+                        if (!ReferenceEquals(_archive, archive))
+                        {
+                            return;
+                        }
+
+                        if (_view.ResetThumbnailRequest(entry.Index, entry))
+                        {
+                            _view.SetStatus($"缩略图索引 {entry.Index} 加载失败：{exception.Message}");
+                        }
                     });
                 }
-            }
+            });
         });
     }
 

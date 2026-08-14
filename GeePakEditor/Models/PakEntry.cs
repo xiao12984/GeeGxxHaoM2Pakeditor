@@ -48,9 +48,9 @@ public sealed class PakEntry
     [ReadOnly(true)]
     public int RawSize { get; internal set; }
 
-    /// <summary>当前块解压后是否允许存在参考实现会忽略的尾部字节。</summary>
+    /// <summary>当前块的载荷布局模式。</summary>
     [Browsable(false)]
-    public bool AllowsRawPayloadTail { get; internal set; }
+    public PakPayloadMode PayloadMode { get; internal set; } = PakPayloadMode.Standard;
 
     /// <summary>压缩载荷长度，零表示未压缩。</summary>
     [Browsable(false)]

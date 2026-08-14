@@ -45,6 +45,7 @@ internal sealed class ThumbnailGridControl : ScrollableControl
     private static readonly Color TextColor = Color.FromArgb(60, 60, 60);
     private static readonly Color SelectedTextColor = Color.White;
     private static readonly Color EmptyTextColor = Color.FromArgb(160, 160, 160);
+    private static readonly Color EmptySlotTextColor = Color.FromArgb(185, 185, 185);
     private static readonly Color ShadowColor = Color.FromArgb(30, 0, 0, 0);
 
     /// <summary>
@@ -178,10 +179,12 @@ internal sealed class ThumbnailGridControl : ScrollableControl
     /// 接收控制器交付的缩略图并刷新对应资源格。
     /// </summary>
     /// <param name="index">资源逻辑索引。</param>
+    /// <param name="entry">生成该缩略图时对应的资源对象。</param>
     /// <param name="thumbnail">由视图缓存和释放的缩略图。</param>
-    public void SetThumbnail(int index, Image thumbnail)
+    public void SetThumbnail(int index, PakEntry entry, Image thumbnail)
     {
-        if (!_allEntries.Any(entry => entry.Index == index))
+        var currentEntry = _allEntries.FirstOrDefault(candidate => candidate.Index == index);
+        if (currentEntry is null || !ReferenceEquals(currentEntry, entry))
         {
             thumbnail.Dispose();
             return;
@@ -202,17 +205,26 @@ internal sealed class ThumbnailGridControl : ScrollableControl
     }
 
     /// <summary>
-    /// 清除指定资源的缩略图请求标记，使失败的资源可以重新请求。
+    /// 清除指定资源对象的缩略图请求标记，使失败的资源可以重新请求。
     /// </summary>
     /// <param name="index">资源逻辑索引。</param>
-    public void ResetThumbnailRequest(int index)
+    /// <param name="entry">发起请求时对应的资源对象，用于忽略过期任务。</param>
+    public bool ResetThumbnailRequest(int index, PakEntry entry)
     {
+        var currentEntry = _allEntries.FirstOrDefault(candidate => candidate.Index == index);
+        if (currentEntry is null || !ReferenceEquals(currentEntry, entry))
+        {
+            return false;
+        }
+
         _requestedIndexes.Remove(index);
         var visibleIndex = _visibleEntries.FindIndex(entry => entry.Index == index);
         if (visibleIndex >= 0)
         {
             InvalidateCell(visibleIndex);
         }
+
+        return true;
     }
 
     /// <summary>
@@ -573,6 +585,20 @@ internal sealed class ThumbnailGridControl : ScrollableControl
                     thumbnailArea.Left + (thumbnailArea.Width - loadingSize.Width) / 2,
                     thumbnailArea.Top + (thumbnailArea.Height - loadingSize.Height) / 2),
                 EmptyTextColor);
+        }
+        else
+        {
+            // 空槽位使用独立标记，避免和仍在解码的非空资源看起来完全一样。
+            const string emptyText = "-";
+            var emptySize = TextRenderer.MeasureText(graphics, emptyText, LoadingFont);
+            TextRenderer.DrawText(
+                graphics,
+                emptyText,
+                LoadingFont,
+                new Point(
+                    thumbnailArea.Left + (thumbnailArea.Width - emptySize.Width) / 2,
+                    thumbnailArea.Top + (thumbnailArea.Height - emptySize.Height) / 2),
+                EmptySlotTextColor);
         }
 
         // 绘制索引标签

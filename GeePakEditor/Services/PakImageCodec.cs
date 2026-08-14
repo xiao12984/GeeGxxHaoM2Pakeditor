@@ -88,12 +88,18 @@ public sealed class PakImageCodec
     }
 
     /// <summary>
-    /// 解压 zlib 载荷并严格验证解压长度。
+    /// 解压图片载荷，并按归档声明的布局取得可见像素区。
     /// </summary>
     private static byte[] ReadRawPayload(PakEntry entry)
     {
         if (entry.CompressedSize == 0)
         {
+            if (entry.PayloadMode == PakPayloadMode.M2Zip && entry.Payload.Length >= entry.RawSize)
+            {
+                // M2Zip 的读取器只消费按宽高计算出的可见像素前缀，保留载荷模式而不是散落长度特判。
+                return entry.Payload.AsSpan(0, entry.RawSize).ToArray();
+            }
+
             if (entry.Payload.Length != entry.RawSize)
             {
                 throw new PakFormatException($"图片 {entry.Index} 原始载荷长度无效。");
@@ -109,15 +115,14 @@ public sealed class PakImageCodec
             using var output = new MemoryStream(entry.RawSize);
             zlib.CopyTo(output);
             var raw = output.ToArray();
+            if (entry.PayloadMode == PakPayloadMode.M2Zip && raw.Length >= entry.RawSize)
+            {
+                // M2Zip 物理流可能带有参考实现不会复制到纹理的辅助区，只交给像素解码器可见区。
+                return raw.AsSpan(0, entry.RawSize).ToArray();
+            }
+
             if (raw.Length != entry.RawSize)
             {
-                if (entry.AllowsRawPayloadTail && raw.Length > entry.RawSize)
-                {
-                    // xiami 的 M2Zip 解码只按 WidthBytes(width) 复制可见像素行；
-                    // 少数老资源的 zlib 流会在后面带额外字节，预览时按参考实现忽略尾部。
-                    return raw.AsSpan(0, entry.RawSize).ToArray();
-                }
-
                 throw new PakFormatException($"图片 {entry.Index} 解压后为 {raw.Length} 字节，预期 {entry.RawSize} 字节。");
             }
 
