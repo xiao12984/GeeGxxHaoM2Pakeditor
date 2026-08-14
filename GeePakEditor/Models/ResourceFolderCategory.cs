@@ -1,12 +1,12 @@
 namespace GeePakEditor.Models;
 
 /// <summary>
-/// 一个资源分类目录及其可打开归档文件。
+/// 一个资源分类及其可打开归档文件。
 /// </summary>
 public sealed class ResourceFolderCategory
 {
     /// <summary>
-    /// 获取分类对应的相对目录，例如 <c>Graphics\Human</c>。
+    /// 获取分类对应的相对目录或内部分类标识，例如 <c>Graphics\Human</c>。
     /// </summary>
     public required string RelativePath { get; init; }
 
@@ -16,12 +16,12 @@ public sealed class ResourceFolderCategory
     public required string DisplayName { get; init; }
 
     /// <summary>
-    /// 获取分类目录的完整路径。
+    /// 获取分类的主要来源目录；合并平铺 Data 与 Graphics 时作为节点来源路径。
     /// </summary>
     public required string DirectoryPath { get; init; }
 
     /// <summary>
-    /// 获取分类目录第一层中按名称排序的归档文件。
+    /// 获取分类中按名称排序并按完整路径去重的归档文件。
     /// </summary>
     public required IReadOnlyList<ResourceArchiveFile> Files { get; init; }
 }

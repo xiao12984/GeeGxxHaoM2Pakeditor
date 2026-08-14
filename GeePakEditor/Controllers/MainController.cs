@@ -76,9 +76,11 @@ public sealed class MainController
             _view.BindFolder(catalog);
             _view.UpdateCommandState(false, false, false);
             _view.ShowPreview(null);
-            finalStatus = catalog.Categories.Count == 0
-                ? "已加载文件夹，但未找到固定资源分类"
-                : $"已加载 {catalog.Categories.Count} 个资源分类";
+            var archiveCount = catalog.Categories.Sum(category => category.Files.Count);
+            // 状态栏同时报告分类数和归档数，便于确认通用 Data 或补丁 Data 是否扫描成功。
+            finalStatus = archiveCount == 0
+                ? "已加载文件夹，但未找到 .pak/.wzl 资源"
+                : $"已加载 {catalog.Categories.Count} 个资源分类，共 {archiveCount} 个归档";
         }
         finally
         {
