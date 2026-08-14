@@ -44,7 +44,7 @@ public interface IMainView
     /// <summary>当前图片的 X/Y 元数据已修改。</summary>
     event EventHandler? MetadataChanged;
 
-    /// <summary>缩略图网格请求加载当前可见资源的缩略图。</summary>
+    /// <summary>缩略图网格请求准备当前归档尚未缓存的缩略图。</summary>
     event EventHandler<ThumbnailRequestEventArgs>? ThumbnailsRequested;
 
     /// <summary>主窗口即将关闭。</summary>

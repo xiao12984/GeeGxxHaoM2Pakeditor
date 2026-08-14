@@ -139,7 +139,7 @@ internal sealed class ThumbnailGridControl : ScrollableControl
     public event EventHandler? EntryDoubleClicked;
 
     /// <summary>
-    /// 当前可见区域出现未缓存资源时请求控制器批量生成缩略图。
+    /// 当前归档出现未缓存资源时请求控制器批量生成缩略图。
     /// </summary>
     public event EventHandler<ThumbnailRequestEventArgs>? ThumbnailsRequested;
 
@@ -228,13 +228,14 @@ internal sealed class ThumbnailGridControl : ScrollableControl
     }
 
     /// <summary>
-    /// 控件句柄建立后补发首轮可见缩略图请求，避免绑定归档时机过早导致资源一直停留在占位符。
+    /// 控件句柄建立后补发完整缩略图请求，避免绑定归档时机过早导致资源一直停留在占位符。
     /// </summary>
     /// <param name="e">句柄创建参数。</param>
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        RequestVisibleThumbnails();
+        // 参考 LibraryEditor：句柄建立后为当前归档准备完整预览缓存，而不是只处理首屏。
+        RequestPendingThumbnails(requestAll: true);
     }
 
     /// <summary>
@@ -245,7 +246,7 @@ internal sealed class ThumbnailGridControl : ScrollableControl
     {
         base.OnSizeChanged(e);
         UpdateLayoutMetrics();
-        RequestVisibleThumbnails();
+        RequestPendingThumbnails(requestAll: false);
         Invalidate(ClientRectangle);
     }
 
@@ -256,7 +257,7 @@ internal sealed class ThumbnailGridControl : ScrollableControl
     protected override void OnScroll(ScrollEventArgs se)
     {
         base.OnScroll(se);
-        RequestVisibleThumbnails();
+        RequestPendingThumbnails(requestAll: false);
         Invalidate();
     }
 
@@ -438,7 +439,7 @@ internal sealed class ThumbnailGridControl : ScrollableControl
         UpdateLayoutMetrics();
         AutoScrollPosition = Point.Empty;
         Invalidate();
-        RequestVisibleThumbnails();
+        RequestPendingThumbnails(requestAll: true);
 
         if (raiseSelectionChanged && previousEntryIndex != SelectedEntry?.Index)
         {
@@ -480,16 +481,19 @@ internal sealed class ThumbnailGridControl : ScrollableControl
     }
 
     /// <summary>
-    /// 请求当前视口中未缓存且尚未请求的非空资源缩略图。
+    /// 请求未缓存且尚未请求的非空资源缩略图。
     /// </summary>
-    private void RequestVisibleThumbnails()
+    /// <param name="requestAll">是否准备当前筛选集合中的全部资源；打开归档时使用完整预取。</param>
+    private void RequestPendingThumbnails(bool requestAll)
     {
         if (!IsHandleCreated || _visibleEntries.Count == 0)
         {
             return;
         }
 
-        var (firstIndex, lastIndex) = GetVisibleRange();
+        var (firstIndex, lastIndex) = requestAll
+            ? (0, _visibleEntries.Count - 1)
+            : GetVisibleRange();
         if (lastIndex < firstIndex)
         {
             return;
@@ -692,7 +696,7 @@ internal sealed class ThumbnailGridControl : ScrollableControl
         if (previousScrollPosition != AutoScrollPosition)
         {
             Invalidate(ClientRectangle);
-            RequestVisibleThumbnails();
+            RequestPendingThumbnails(requestAll: false);
         }
         else
         {

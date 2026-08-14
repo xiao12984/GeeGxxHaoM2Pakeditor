@@ -434,7 +434,7 @@ public sealed class MainController
     }
 
     /// <summary>
-    /// 按缩略图网格请求异步解码当前可见资源，并交由视图缓存缩放后的副本。
+    /// 按缩略图网格请求异步解码资源，并交由视图缓存缩放后的副本。
     /// 解码和缩放操作在后台线程执行，避免阻塞 UI。
     /// </summary>
     /// <param name="entries">需要生成缩略图的非空资源槽位。</param>
@@ -457,57 +457,80 @@ public sealed class MainController
             return;
         }
 
+        _view.SetStatus($"正在准备 {deduplicatedEntries.Count:N0} 张缩略图...");
         Task.Run(() =>
         {
             // 参考 LibraryEditor 会在图库对象层面准备好图片后再提供预览；
-            // 这里保留视口懒加载以控制内存，但对当前批次使用有界并行，避免缩略图按索引串行排队。
+            // 当前归档一次性准备所有请求的预览，避免大量资源长期停留在视口占位符。
             var options = new ParallelOptions
             {
                 MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount, 1, 4)
             };
 
-            Parallel.ForEach(deduplicatedEntries, options, entry =>
+            var results = new (PakEntry Entry, Image? Thumbnail, Exception? Error)[deduplicatedEntries.Count];
+            Parallel.ForEach(
+                Enumerable.Range(0, deduplicatedEntries.Count),
+                options,
+                resultIndex =>
             {
+                var entry = deduplicatedEntries[resultIndex];
                 try
                 {
                     using var image = _archiveService.DecodeImage(entry);
                     var thumbnail = CreateThumbnail(image);
-                    _view.InvokeOnUi(() =>
-                    {
-                        try
-                        {
-                            // 归档或槽位已被替换时丢弃旧任务结果，避免旧缩略图覆盖新缓存。
-                            if (!ReferenceEquals(_archive, archive))
-                            {
-                                thumbnail.Dispose();
-                                return;
-                            }
-
-                            _view.ShowThumbnail(entry.Index, entry, thumbnail);
-                        }
-                        catch
-                        {
-                            thumbnail.Dispose();
-                            throw;
-                        }
-                    });
+                    results[resultIndex] = (entry, thumbnail, null);
                 }
                 catch (Exception exception)
                 {
-                    // 单个 WZL 资源解码失败时只跳过当前缩略图，避免中断同一批次的其他资源。
-                    _view.InvokeOnUi(() =>
+                    // 单个 WZL 资源解码失败时保留批次其余结果，失败状态统一回 UI 线程处理。
+                    results[resultIndex] = (entry, null, exception);
+                }
+            });
+
+            _view.InvokeOnUi(() =>
+            {
+                var loadedCount = 0;
+                foreach (var result in results)
+                {
+                    if (result.Error is not null)
                     {
                         // 失败回调同样必须绑定原始资源对象，避免旧归档污染新归档的同索引请求状态。
-                        if (!ReferenceEquals(_archive, archive))
+                        if (ReferenceEquals(_archive, archive) &&
+                            _view.ResetThumbnailRequest(result.Entry.Index, result.Entry))
                         {
-                            return;
+                            _view.SetStatus($"缩略图索引 {result.Entry.Index} 加载失败：{result.Error.Message}");
                         }
 
-                        if (_view.ResetThumbnailRequest(entry.Index, entry))
-                        {
-                            _view.SetStatus($"缩略图索引 {entry.Index} 加载失败：{exception.Message}");
-                        }
-                    });
+                        continue;
+                    }
+
+                    if (result.Thumbnail is null)
+                    {
+                        continue;
+                    }
+
+                    // 归档或槽位已被替换时丢弃整批旧结果，避免旧缩略图覆盖新缓存。
+                    if (!ReferenceEquals(_archive, archive))
+                    {
+                        result.Thumbnail.Dispose();
+                        continue;
+                    }
+
+                    try
+                    {
+                        _view.ShowThumbnail(result.Entry.Index, result.Entry, result.Thumbnail);
+                        loadedCount++;
+                    }
+                    catch
+                    {
+                        result.Thumbnail.Dispose();
+                        throw;
+                    }
+                }
+
+                if (ReferenceEquals(_archive, archive))
+                {
+                    _view.SetStatus($"已准备 {loadedCount:N0}/{deduplicatedEntries.Count:N0} 张缩略图");
                 }
             });
         });
